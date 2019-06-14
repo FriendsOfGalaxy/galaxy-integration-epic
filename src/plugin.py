@@ -101,18 +101,6 @@ class EpicPlugin(Plugin):
 
         return await self._do_auth()
 
-    async def _get_title_sanitized(self, app_name):
-        if app_name in self._games_cache:
-            return self._games_cache[app_name].game_title.replace(" ", "-").lower()
-        log.debug('Nothing found, fallback to epic client')
-        assets = await self._epic_client.get_assets()
-        for asset in assets:
-            if asset.app_name == app_name:
-                details = await self._epic_client.get_catalog_items(asset.namespace, asset.catalog_id)
-                return details.title.replace(" ", "-").lower()
-        log.warning(f'Game {app_name} was not found in assets')
-        raise UnknownBackendResponse()
-
     async def _get_owned_games(self):
         requests = []
         assets = await self._epic_client.get_assets()
@@ -143,14 +131,36 @@ class EpicPlugin(Plugin):
             for app_name, state in self._local_provider.games.items()
         ]
 
+    async def _get_store_slug(self, game_id):
+        title = ""
+        namespace = ""
+        assets = await self._epic_client.get_assets()
+        for asset in assets:
+            if asset.app_name == game_id:
+                if game_id in self._games_cache:
+                    title = self._games_cache[game_id].game_title
+                else:
+                    details = await self._epic_client.get_catalog_items(asset.namespace, asset.catalog_id)
+                    title = details.title
+                namespace = asset.namespace
+
+        product_store_info = await self._epic_client.get_product_store_info(title)
+        if "data" in product_store_info:
+            for product in product_store_info["data"]["Catalog"]["catalogOffers"]["elements"]:
+                if product["linkedOfferNs"] == namespace:
+                    return product['productSlug']
+        return ""
+
     async def open_epic_browser(self, game_id):
         try:
-            title = await self._get_title_sanitized(game_id)
-            title = title.replace(" ", "-").lower()
+            store_slug = await self._get_store_slug(game_id)
+            if store_slug:
+                url = f"https://www.epicgames.com/store/product/{store_slug}"
+            else:
+                url = "https://www.epicgames.com/"
         except UnknownBackendResponse:
             url = "https://www.epicgames.com/"
-        else:
-            url = f"https://www.epicgames.com/store/product/{title}/home"
+
         log.info(f"Opening Epic website {url}")
         webbrowser.open(url)
 
@@ -177,18 +187,34 @@ class EpicPlugin(Plugin):
         if not self._local_provider.is_launcher_installed:
             await self.open_epic_browser(game_id)
             return
-        title = await self._get_title_sanitized(game_id)
-        cmd = f"{self._open} com.epicgames.launcher://store/product/{title}/home"
-        log.info(f"Uninstalling game {title}")
+
+        try:
+            slug = await self._get_store_slug(game_id)
+            if slug:
+                cmd = f"{self._open} com.epicgames.launcher://store/product/{slug}"
+            else:
+                cmd = f"{self._open} com.epicgames.launcher://apps/"
+        except:
+            cmd = f"{self._open} com.epicgames.launcher://apps/"
+
+        log.info(f"Uninstalling game by following command {cmd}")
         subprocess.Popen(cmd, shell=True)
 
     async def install_game(self, game_id):
         if not self._local_provider.is_launcher_installed:
             await self.open_epic_browser(game_id)
             return
-        title = await self._get_title_sanitized(game_id)
-        cmd = f"{self._open} com.epicgames.launcher://store/product/{title}/home"
-        log.info(f"Installing game {title}")
+
+        try:
+            slug = await self._get_store_slug(game_id)
+            if slug:
+                cmd = f"{self._open} com.epicgames.launcher://store/product/{slug}"
+            else:
+                cmd = f"{self._open} com.epicgames.launcher://apps/"
+        except:
+            cmd = f"{self._open} com.epicgames.launcher://apps/"
+
+        log.info(f"Installing game by following command {cmd}")
         subprocess.Popen(cmd, shell=True)
 
     async def get_friends(self):

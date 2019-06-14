@@ -1,6 +1,7 @@
 # debug purposes and local dev stuff
 .venv
 credentials.data
+Pipfile
 
 # pytest
 __pycache__/

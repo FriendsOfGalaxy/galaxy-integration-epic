@@ -100,3 +100,27 @@ class EpicClient:
             return CatalogItem(item["id"], item["title"], categories)
         except (IndexError, KeyError):
             raise UnknownBackendResponse()
+
+    async def get_product_store_info(self, query):
+        data = {"query": '''\n query searchQuery($namespace: String!, $locale: String!, $query: String!, $country: String!) {
+          Catalog {
+            catalogOffers(namespace: $namespace, locale: $locale, params: {keywords: $query, country: $country}) {
+              elements {
+                title
+                productSlug
+                linkedOfferNs 
+                categories {
+                  path
+                }
+              }
+            }
+          }
+        }''',
+                "variables": {"country": "US",
+                              "locale": "en-US",
+                              "namespace": "epic",
+                              "query": query}
+                }
+        response = await self._http_client.post("https://graphql.epicgames.com/graphql", json=data)
+        response = await response.json()
+        return response

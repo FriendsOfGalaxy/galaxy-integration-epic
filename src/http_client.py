@@ -84,6 +84,9 @@ class AuthenticatedHttpClient:
 
             return await self._authorized_get(*args, **kwargs)
 
+    async def post(self, *args, **kwargs):
+        return await self._request("POST", *args, **kwargs)
+
     async def close(self):
         await self._session.close()
         logging.debug('http client session closed')

@@ -1,16 +1,10 @@
-import asyncio
 import logging
-import ssl
 from base64 import b64encode
-from http import HTTPStatus
-
-import aiohttp
-import certifi
+from galaxy.http import HttpClient
 
 from galaxy.api.errors import (
-    AccessDenied, AuthenticationRequired,
+    AuthenticationRequired, NetworkError,
     BackendTimeout, BackendNotAvailable, BackendError, UnknownBackendResponse,
-    NetworkError, UnknownError
 )
 
 
@@ -19,7 +13,7 @@ def basic_auth_credentials(login, password):
     return b64encode(credentials.encode()).decode("ascii")
 
 
-class AuthenticatedHttpClient:
+class AuthenticatedHttpClient(HttpClient):
     _LAUNCHER_LOGIN = "34a02cf8f4414e29b15921876da36f9a"
     _LAUNCHER_PASSWORD = "daafbccc737745039dffe53d94fc76cf"
     _BASIC_AUTH_CREDENTIALS = basic_auth_credentials(_LAUNCHER_LOGIN, _LAUNCHER_PASSWORD)
@@ -40,10 +34,9 @@ class AuthenticatedHttpClient:
         self._account_id = None
         self._auth_lost_callback = None
         self._store_credentials = store_credentials_callback
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ssl_context.load_verify_locations(certifi.where())
-        connector = aiohttp.TCPConnector(limit=20, ssl=ssl_context)
-        self._session = aiohttp.ClientSession(connector=connector)
+        super().__init__()
+        self._session.headers = {}
+        self._session.headers["User-Agent"] = self.LAUNCHER_USER_AGENT
 
     def set_auth_lost_callback(self, callback):
         self._auth_lost_callback = callback
@@ -76,6 +69,8 @@ class AuthenticatedHttpClient:
         except AuthenticationRequired:
             try:
                 await self._refresh_tokens()
+            except (BackendNotAvailable, BackendTimeout, BackendError, NetworkError):
+                raise
             except Exception:
                 logging.exception("Failed to refresh tokens")
                 if self._auth_lost_callback:
@@ -85,10 +80,10 @@ class AuthenticatedHttpClient:
             return await self._authorized_get(*args, **kwargs)
 
     async def post(self, *args, **kwargs):
-        return await self._request("POST", *args, **kwargs)
+        return await super().request("POST", *args, **kwargs)
 
     async def close(self):
-        await self._session.close()
+        await super().close()
         logging.debug('http client session closed')
 
     async def _refresh_tokens(self):
@@ -104,10 +99,11 @@ class AuthenticatedHttpClient:
             "token_type": "eg1"
         }
         data[grant_type] = secret
+
         try:
-            response = await self._request("POST", self._OAUTH_URL, headers=headers, data=data)
+            response = await super().request("POST", self._OAUTH_URL, headers=headers, data=data)
         except Exception as e:
-            logging.exception(f"Authentication failed, grant_type: {grant_type}")
+            logging.exception(f"Authentication failed, grant_type: {grant_type}, exception: {repr(e)}")
             raise e
         result = await response.json()
         try:
@@ -121,32 +117,12 @@ class AuthenticatedHttpClient:
             logging.exception("Can not parse backend response")
             raise UnknownBackendResponse()
 
-    async def _request(self, method, *args, **kwargs):
-        try:
-            response = await self._session.request(method, *args, **kwargs)
-        except asyncio.TimeoutError:
-            raise BackendTimeout()
-        except aiohttp.ClientConnectionError:
-            raise NetworkError()
-        logging.debug(f"Request response status: {response.status}")
-        if response.status == HTTPStatus.UNAUTHORIZED:
-            raise AuthenticationRequired()
-        if response.status == HTTPStatus.FORBIDDEN:
-            raise AccessDenied()
-        if response.status == HTTPStatus.SERVICE_UNAVAILABLE:
-            raise BackendNotAvailable()
-        if response.status >= 500:
-            raise BackendError()
-        if response.status >= 400:
-            raise UnknownError()
-
-        return response
 
     async def _authorized_get(self, *args, **kwargs):
         headers = kwargs.setdefault("headers", {})
         headers["Authorization"] = "bearer " + self._access_token
         headers["User-Agent"] = self.LAUNCHER_USER_AGENT
-        return await self._request("GET", *args, **kwargs)
+        return await super().request("GET", *args, **kwargs)
 
     def _auth_lost(self):
         self._access_token = None

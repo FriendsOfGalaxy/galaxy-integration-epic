@@ -8,7 +8,11 @@ import webbrowser
 from galaxy.api.plugin import Plugin, create_and_run_plugin
 from galaxy.api.consts import Platform, LicenseType
 from galaxy.api.types import Authentication, Game, LicenseInfo, FriendInfo, LocalGame, NextStep
-from galaxy.api.errors import InvalidCredentials, UnknownBackendResponse
+from galaxy.api.errors import (
+    InvalidCredentials, UnknownBackendResponse,
+    BackendTimeout, BackendNotAvailable, BackendError, NetworkError, UnknownError
+)
+
 
 from backend import EpicClient
 from http_client import AuthenticatedHttpClient
@@ -84,8 +88,9 @@ class EpicPlugin(Plugin):
         refresh_token = stored_credentials["refresh_token"]
         try:
             await self._http_client.authenticate_with_refresh_token(refresh_token)
+        except (BackendNotAvailable, BackendError, BackendTimeout, NetworkError, UnknownError) as e:
+            raise e
         except Exception:
-            # TODO: distinguish between login-related and all other (networking, server, e.t.c.) errors
             raise InvalidCredentials()
 
         return await self._do_auth()
@@ -95,8 +100,9 @@ class EpicPlugin(Plugin):
             await self._http_client.authenticate_with_exchage_code(
                 credentials["end_uri"].split(AUTH_REDIRECT_URL, 1)[1]
             )
+        except (BackendNotAvailable, BackendError, BackendTimeout, NetworkError, UnknownError) as e:
+            raise e
         except Exception:
-            # TODO: distinguish between login-related and all other (networking, server, e.t.c.) errors
             raise InvalidCredentials()
 
         return await self._do_auth()
@@ -176,7 +182,7 @@ class EpicPlugin(Plugin):
             await self.open_epic_browser(game_id)
             return
         if self._local_provider.is_game_running(game_id):
-            log.info('Game already running.')
+            log.info(f'Game already running, game_id: {game_id}.')
             return
         cmd = f"{self._open} com.epicgames.launcher://apps/{game_id}?action=launch^&silent=true"
         log.info(f"Launching game {game_id}")
@@ -222,7 +228,6 @@ class EpicPlugin(Plugin):
         account_ids = []
         friends = []
         prev_slice = 0
-        log.debug(ids)
         for index, entry in enumerate(ids):
             account_ids.append(entry["accountId"])
             ''' Send request for friends information in batches of 50 so the request isn't too large,

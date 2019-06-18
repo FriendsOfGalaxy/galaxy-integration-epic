@@ -184,7 +184,13 @@ class EpicPlugin(Plugin):
         if self._local_provider.is_game_running(game_id):
             log.info(f'Game already running, game_id: {game_id}.')
             return
-        cmd = f"{self._open} com.epicgames.launcher://apps/{game_id}?action=launch^&silent=true"
+        cmd = f"{self._open} com.epicgames.launcher://apps/{game_id}?action=launch"
+
+        if SYSTEM == System.WINDOWS:
+            cmd += "^&silent=true"
+        elif SYSTEM == System.MACOS:
+            cmd += "&silent=true"
+
         log.info(f"Launching game {game_id}")
         subprocess.Popen(cmd, shell=True)
         await self._local_provider.search_process(game_id, timeout=30)

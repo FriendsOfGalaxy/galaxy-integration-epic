@@ -72,7 +72,7 @@ class _ProcessWatcher:
     def _search_in_children(self, procs: Iterable[psutil.Process], recursive=True):
         """Cache only child processes because process_iter has its own module level cache"""
         found = False
-        for proc in procs:
+        for proc in procs.copy():
             try:
                 for child in proc.children(recursive=recursive):
                     if child in self._cache:
@@ -83,19 +83,6 @@ class _ProcessWatcher:
             except (psutil.AccessDenied, psutil.NoSuchProcess) as e:
                 log.warn(f'Getting children of {proc} has failed: {e}')
         return found
-
-    def _is_anything_to_watch(self, skip_running=False):
-        """Check if parsing processes has any sens: if there is any not running watched game
-        :param skip_running     only check if watched_games is empty
-        """
-        if skip_running:
-            candidates = self.watched_games
-        else:
-            candidates = [gm for gm, procs in self.watched_games.items() if not procs]
-        if len(candidates) == 0:
-            log.debug('ProcessWatcher: parsing not needed')
-            return False
-        return True
 
     def __match_process(self, proc):
         for game in self._watched_apps:
@@ -169,8 +156,6 @@ class ProcessWatcher(_ProcessWatcher):
         """Return set of ids of currently running games.
         Note: does not actively look for launcher
         """
-        if not self._is_anything_to_watch():
-            return set()
         if check_under_launcher and self._is_launcher_running():
             self._search_in_children(self._launcher, recursive=True)
         return self._get_running_games()

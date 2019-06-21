@@ -3,8 +3,7 @@ from base64 import b64encode
 from galaxy.http import HttpClient
 
 from galaxy.api.errors import (
-    AuthenticationRequired, NetworkError,
-    BackendTimeout, BackendNotAvailable, BackendError, UnknownBackendResponse,
+    AuthenticationRequired, UnknownBackendResponse
 )
 
 
@@ -69,13 +68,14 @@ class AuthenticatedHttpClient(HttpClient):
         except AuthenticationRequired:
             try:
                 await self._refresh_tokens()
-            except (BackendNotAvailable, BackendTimeout, BackendError, NetworkError):
-                raise
-            except Exception:
-                logging.exception("Failed to refresh tokens")
+            except AuthenticationRequired as e:
+                logging.exception(f"Failed to refresh tokens, received: {repr(e)}")
                 if self._auth_lost_callback:
                     self._auth_lost_callback()
-                raise AuthenticationRequired()
+                raise
+            except Exception as e:
+                logging.exception(f"Got exception {repr(e)}")
+                raise
 
             return await self._authorized_get(*args, **kwargs)
 

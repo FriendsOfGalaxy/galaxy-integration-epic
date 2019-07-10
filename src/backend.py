@@ -1,11 +1,9 @@
 import asyncio
 import logging as log
-from collections import namedtuple
 
 from galaxy.api.errors import UnknownBackendResponse
 
-Asset = namedtuple("Asset", ["namespace", "app_name", "catalog_id"])
-CatalogItem = namedtuple("CatalogItem", ["id", "title", "categories"])
+from definitions import Asset, CatalogItem
 
 
 class EpicClient:
@@ -108,7 +106,7 @@ class EpicClient:
               elements {
                 title
                 productSlug
-                linkedOfferNs 
+                linkedOfferNs
                 categories {
                   path
                 }

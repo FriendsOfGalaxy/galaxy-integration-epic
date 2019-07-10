@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, PropertyMock
-
 import pytest
-from galaxy.unittest.mock import AsyncMock
+
+from utils import AsyncMock
 
 from plugin import EpicPlugin
 from process_watcher import ProcessWatcher

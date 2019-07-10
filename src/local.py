@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 import json
 import logging as log
 from collections import defaultdict
@@ -69,18 +70,6 @@ class LocalGamesProvider:
         self._status_updater = None
 
     @property
-    def is_launcher_installed(self):
-        if SYSTEM == System.WINDOWS:
-            try:
-                reg = winreg.ConnectRegistry(None, winreg.HKEY_LOCAL_MACHINE)
-                winreg.OpenKey(reg, EPIC_WINREG_LOCATION)
-                return True
-            except OSError:
-                return False
-        elif SYSTEM == System.MACOS:
-            return os.path.exists(EPIC_MAC_INSTALL_LOCATION)
-
-    @property
     def first_run(self):
         return self._first_run
 
@@ -112,13 +101,12 @@ class LocalGamesProvider:
         counter = 0
         while True:
             try:
-                if self.is_launcher_installed:
-                    self.check_for_installed()
-                    if 0 == counter % 21:
-                        await self.parse_all_procs_if_needed()
-                    elif 0 == counter % 7:
-                        self.check_for_running(check_for_new=True)
-                    self.check_for_running()
+                self.check_for_installed()
+                if 0 == counter % 21:
+                    await self.parse_all_procs_if_needed()
+                elif 0 == counter % 7:
+                    self.check_for_running(check_for_new=True)
+                self.check_for_running()
             except Exception as e:
                 log.error(e)
             finally:
@@ -135,8 +123,9 @@ class LocalGamesProvider:
         self._was_installed = installed
 
     async def parse_all_procs_if_needed(self):
-        if len(self._was_installed) > 0 and len(self._was_running) == 0:
-            await self._ps_watcher._serach_in_all_slowly(interval=0.015)
+        if local_client._is_installed is True:
+            if len(self._was_installed) > 0 and len(self._was_running) == 0:
+                await self._ps_watcher._serach_in_all_slowly(interval=0.015)
 
     def check_for_running(self, check_for_new=False):
         running = self._ps_watcher.get_running_games(check_under_launcher=check_for_new)
@@ -153,3 +142,72 @@ class LocalGamesProvider:
             self._games[id_] ^= status
             if not self._first_run:
                 self._updated_games.add(id_)
+
+
+class ClientNotInstalled(Exception):
+    pass
+
+
+class _MacosLauncher:
+    _OPEN = 'open'
+
+    def __init__(self):
+        self._was_client_installed = None
+
+    @property
+    def _is_installed(self):
+        """:returns:     bool or None if not known """
+        # in case we have tried to run it previously
+        if self._was_client_installed is not None:
+            return self._was_client_installed
+
+        # else we assume that is installed under /Applications
+        if os.path.exists(EPIC_MAC_INSTALL_LOCATION):
+            return True
+        else:  # probably not but we don't know for sure
+            return None
+
+    async def exec(self, cmd):
+        cmd = f"{self._OPEN} {cmd}"
+        log.info(f"Executing shell command: {cmd}")
+        proc = await asyncio.create_subprocess_shell(cmd)
+        status = None
+        try:
+            status = await asyncio.wait_for(proc.wait(), timeout=2)
+        except asyncio.TimeoutError:
+            log.warn('Calling Epic Launcher timeouted. Probably it is fresh installed w/o executable permissions.')
+        else:
+            if status != 0:
+                log.debug(f'Calling Epic Launcher failed with code {status}. Assuming it is not installed')
+                self._was_client_installed = False
+                raise ClientNotInstalled
+            else:
+                self._was_client_installed = True
+
+
+class _WindowsLauncher:
+    _OPEN = 'start'
+
+    @property
+    def _is_installed(self):
+        try:
+            reg = winreg.ConnectRegistry(None, winreg.HKEY_LOCAL_MACHINE)
+            with winreg.OpenKey(reg, EPIC_WINREG_LOCATION) as key:
+                path = winreg.QueryValueEx(key, "AppDataPath")[0]
+            return os.path.exists(path)
+        except OSError:
+            return False
+
+    async def exec(self, cmd):
+        if not self._is_installed:
+            raise ClientNotInstalled
+
+        cmd = f"{self._OPEN} {cmd}"
+        log.info(f"Executing shell command: {cmd}")
+        subprocess.Popen(cmd, shell=True)
+
+
+if SYSTEM == System.WINDOWS:
+    local_client = _WindowsLauncher()
+elif SYSTEM == System.MACOS:
+    local_client = _MacosLauncher()

@@ -17,7 +17,7 @@ SYSTEM = None
 if sys.platform == 'win32':
     SYSTEM = System.WINDOWS
     _program_data = os.getenv('PROGRAMDATA')
-    EPIC_WINREG_LOCATION = "SOFTWARE\\WOW6432Node\\Epic Games\\EpicGamesLauncher"
+    EPIC_WINREG_LOCATION = r"com.epicgames.launcher\shell\open\command"
     LAUNCHER_WINREG_LOCATION = r"Computer\HKEY_CLASSES_ROOT\com.epicgames.launcher\shell\open\command"
     LAUNCHER_PROCESS_IDENTIFIER = 'EpicGamesLauncher.exe'
 

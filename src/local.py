@@ -188,12 +188,16 @@ class _MacosLauncher:
 class _WindowsLauncher:
     _OPEN = 'start'
 
+    @staticmethod
+    def _parse_winreg_path(path):
+        return path.replace('"', '').partition('%')[0].strip()
+
     @property
     def _is_installed(self):
         try:
-            reg = winreg.ConnectRegistry(None, winreg.HKEY_LOCAL_MACHINE)
+            reg = winreg.ConnectRegistry(None, winreg.HKEY_CLASSES_ROOT)
             with winreg.OpenKey(reg, EPIC_WINREG_LOCATION) as key:
-                path = winreg.QueryValueEx(key, "AppDataPath")[0]
+                path = self._parse_winreg_path(winreg.QueryValueEx(key, "")[0])
             return os.path.exists(path)
         except OSError:
             return False

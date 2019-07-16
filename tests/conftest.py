@@ -46,7 +46,9 @@ def backend_client():
     mock.get_display_name = MagicMock()
     mock.get_users_info = AsyncMock()
     mock.get_assets = AsyncMock()
-    mock.get_catalog_items = AsyncMock()
+    mock.get_catalog_items_with_id = AsyncMock()
+    mock.get_entitlements = AsyncMock()
+    mock.get_catalog_items_with_namespace = AsyncMock()
     return mock
 
 

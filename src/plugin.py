@@ -9,7 +9,7 @@ from galaxy.api.consts import Platform, LicenseType
 from galaxy.api.types import Authentication, Game, LicenseInfo, FriendInfo, LocalGame, NextStep
 from galaxy.api.errors import (
     InvalidCredentials, BackendTimeout, BackendNotAvailable,
-    BackendError, NetworkError, UnknownError
+    BackendError, NetworkError, UnknownError, UnknownBackendResponse
 )
 
 from backend import EpicClient
@@ -87,7 +87,9 @@ class EpicPlugin(Plugin):
         assets = await self._epic_client.get_assets()
         asset_by_id = {}
         requests = []
+        namespaces_scanned = []
         for asset in assets:
+            namespaces_scanned.append(asset.namespace)
             if asset.namespace == "ue":
                 continue
             if asset.app_name in self._game_info_cache:
@@ -98,7 +100,7 @@ class EpicPlugin(Plugin):
                 )
                 continue
             asset_by_id[asset.catalog_id] = asset
-            requests.append(self._epic_client.get_catalog_items(asset.namespace, asset.catalog_id))
+            requests.append(self._epic_client.get_catalog_items_with_id(asset.namespace, asset.catalog_id))
 
         items = await asyncio.gather(*requests)
         for it in items:
@@ -108,6 +110,19 @@ class EpicPlugin(Plugin):
             game = Game(asset.app_name, it.title, None, LicenseInfo(LicenseType.SinglePurchase))
             games.append(game)
             self._game_info_cache[asset.app_name] = GameInfo(asset.namespace, asset.app_name, it.title)
+
+        # look for pre-orders
+        entitlements = await self._epic_client.get_entitlements()
+        for entitlement in entitlements:
+            if entitlement.namespace not in namespaces_scanned:
+                try:
+                    item = await self._epic_client.get_catalog_items_with_namespace(entitlement.namespace)
+                except UnknownBackendResponse:
+                    continue
+                log.info(f"Found a potential pre order: {item}")
+                game = Game(item.app_name, item.title, None, LicenseInfo(LicenseType.SinglePurchase))
+                games.append(game)
+                self._game_info_cache[item.app_name] = GameInfo(entitlement.namespace, item.app_name, item.title)
 
         self._store_cache('game_info', self._game_info_cache)
         return games
@@ -142,7 +157,7 @@ class EpicPlugin(Plugin):
                         if game_id in self._owned_games:
                             title = self._owned_games[game_id].game_title
                         else:
-                            details = await self._epic_client.get_catalog_items(asset.namespace, asset.catalog_id)
+                            details = await self._epic_client.get_catalog_items_with_id(asset.namespace, asset.catalog_id)
                             title = details.title
                         namespace = asset.namespace
 

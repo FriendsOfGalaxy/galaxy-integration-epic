@@ -3,7 +3,7 @@ import logging as log
 
 from galaxy.api.errors import UnknownBackendResponse
 
-from definitions import Asset, CatalogItem
+from definitions import Asset, CatalogItem, Entitlement, PreOrderCatalogItem
 
 
 class EpicClient:
@@ -50,7 +50,7 @@ class EpicClient:
 
         return list(assets)
 
-    async def get_catalog_items(self, namespace, catalog_id):
+    async def get_catalog_items_with_id(self, namespace, catalog_id):
         url = (
             "https://catalog-public-service-prod06.ol.epicgames.com"
             "/catalog/api/shared/namespace/{}/bulk/items"
@@ -70,6 +70,34 @@ class EpicClient:
         else:
             return item
 
+    async def get_catalog_items_with_namespace(self, namespace):
+        url = (
+            "https://catalog-public-service-prod06.ol.epicgames.com"
+            "/catalog/api/shared/namespace/{}/items?category=games"
+        ).format(namespace)
+
+        response = await self._http_client.get(url)
+        items = await response.json()
+        try:
+            item = self._parse_preorder_items(items)
+        except UnknownBackendResponse:
+            log.exception(f"Can not parse backend response for {url} for : {items}")
+            raise UnknownBackendResponse
+        else:
+            return item
+
+    async def get_entitlements(self):
+        url = (
+            "https://entitlement-public-service-prod08.ol.epicgames.com/entitlement"
+            f"/api/account/{self._http_client.account_id}/entitlements?start=0&count=5000"
+        )
+        response = await self._http_client.get(url)
+        response = await response.json()
+        entitlements = set()
+        entitlements.update(self._parse_entitlements(response))
+        log.info(entitlements)
+        return entitlements
+
     async def get_friends_list(self):
         url = (
             "https://friends-public-service-prod06.ol.epicgames.com/friends/api/public/"
@@ -78,6 +106,17 @@ class EpicClient:
         response = await self._http_client.get(url)
         items = await response.json()
         return items
+
+    @staticmethod
+    def _parse_entitlements(entitlements):
+        result = []
+        for entitlement in entitlements:
+            try:
+                result.append(Entitlement(entitlement["namespace"]))
+            except KeyError as e:
+                log.exception(f"Can not parse assets backend response: {e}")
+                raise UnknownBackendResponse()
+        return result
 
     @staticmethod
     def _parse_assets(items):
@@ -96,8 +135,32 @@ class EpicClient:
             item = list(items.values())[0]
             categories = [category["path"] for category in item["categories"]]
             return CatalogItem(item["id"], item["title"], categories)
-        except (IndexError, KeyError):
+        except (IndexError, KeyError) as e:
+            log.warning(f"Could not parse catalog item in {items}, error {repr(e)}")
             raise UnknownBackendResponse()
+
+    @staticmethod
+    def _parse_preorder_items(items):
+        blacklist = ['demo', 'staging', 'qa', 'dummy', 'debug', 'testing']
+        log.info(f"Parsing catalog looking for pre orders: {items}")
+        try:
+            for item in items["elements"]:
+                for release_info in item["releaseInfo"]:
+                    bad = False
+                    for black_item in blacklist:
+                        if release_info["appId"].lower().endswith(black_item):
+                            bad = True
+
+                    if not bad:
+                        categories = [category["path"] for category in item["categories"]]
+                        log.info(f"Found preorder, {item}")
+                        return PreOrderCatalogItem(item["id"], item["title"], categories, release_info["appId"])
+            raise RuntimeError()
+        except (IndexError, KeyError, RuntimeError) as e:
+            log.warning(f"Could not find preorder item in {items}, blacklist was {blacklist}  error {repr(e)}")
+            raise UnknownBackendResponse()
+
+
 
     async def get_product_store_info(self, query):
         data = {"query": '''\n query searchQuery($namespace: String!, $locale: String!, $query: String!, $country: String!) {

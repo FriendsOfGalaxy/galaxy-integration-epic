@@ -124,6 +124,7 @@ class AuthenticatedHttpClient(HttpClient):
         headers["User-Agent"] = self.LAUNCHER_USER_AGENT
         return await super().request("GET", *args, **kwargs)
 
+
     def _auth_lost(self):
         self._access_token = None
         self._account_id = None

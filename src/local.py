@@ -25,8 +25,7 @@ class LauncherInstalledParser:
     def file_has_changed(self):
         try:
             stat = os.stat(self._path)
-        except FileNotFoundError as e:
-            log.debug(str(e))
+        except FileNotFoundError:
             return False
         except Exception as e:
             log.exception(f'Stating {self._path} has failed: {str(e)}')
@@ -116,7 +115,7 @@ class LocalGamesProvider:
     def check_for_installed(self):
         if not self._parser.file_has_changed():
             return
-        log.debug('Ini file has been changed. Parsing')
+        log.debug(f'{self._parser._path} file has been found/changed. Parsing')
         installed = self._parser.parse()
         self._update_game_statuses(set(self._was_installed), set(installed), LocalGameState.Installed)
         self._ps_watcher.watched_games = installed

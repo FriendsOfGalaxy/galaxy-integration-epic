@@ -116,10 +116,9 @@ class EpicPlugin(Plugin):
         for entitlement in entitlements:
             if entitlement.namespace not in namespaces_scanned:
                 try:
-                    item = await self._epic_client.get_catalog_items_with_namespace(entitlement.namespace)
+                    item = await self._epic_client.get_preorders(entitlement.namespace)
                 except UnknownBackendResponse:
                     continue
-                log.info(f"Found a potential pre order: {item}")
                 game = Game(item.app_name, item.title, None, LicenseInfo(LicenseType.SinglePurchase))
                 games.append(game)
                 self._game_info_cache[item.app_name] = GameInfo(entitlement.namespace, item.app_name, item.title)
@@ -145,11 +144,11 @@ class EpicPlugin(Plugin):
         ]
 
     async def _get_store_slug(self, game_id):
-        cache = self.persistent_cache.get('game_info_cache', {})
+        cached_game_info = self._game_info_cache.get(game_id)
         try:
-            if game_id in cache:
-                title = cache.title
-                namespace = cache.namespace
+            if cached_game_info:
+                title = cached_game_info.title
+                namespace = cached_game_info.namespace
             else:  # extra safety fallback in case of dealing with removed game
                 assets = await self._epic_client.get_assets()
                 for asset in assets:
@@ -167,18 +166,15 @@ class EpicPlugin(Plugin):
                     if product["linkedOfferNs"] == namespace:
                         return product['productSlug']
             return ""
-        except:
+        except Exception as e:
+            log.error(repr(e))
             return ""
 
-    async def open_epic_browser(self, game_id=None):
-        if game_id is None:
-            url = "https://www.epicgames.com/store/download"
+    async def open_epic_browser(self, store_slug=None):
+        if store_slug:
+            url = f"https://www.epicgames.com/store/install/{store_slug}"
         else:
-            store_slug = await self._get_store_slug(game_id)
-            if store_slug:
-                url = f"https://www.epicgames.com/store/product/{store_slug}"
-            else:
-                url = "https://www.epicgames.com/"
+            url = "https://www.epicgames.com/store/download"
 
         log.info(f"Opening Epic website {url}")
         webbrowser.open(url)
@@ -222,7 +218,7 @@ class EpicPlugin(Plugin):
         try:
             await self._local_client.exec(cmd)
         except ClientNotInstalled:
-            await self.open_epic_browser(game_id)
+            await self.open_epic_browser(slug)
 
     async def get_friends(self):
         ids = await self._epic_client.get_friends_list()

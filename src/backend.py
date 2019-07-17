@@ -77,14 +77,17 @@ class EpicClient:
         ).format(namespace)
 
         response = await self._http_client.get(url)
-        items = await response.json()
+        return await response.json()
+
+    async def get_preorders(self, namespace):
+        items = await self.get_catalog_items_with_namespace(namespace)
         try:
-            item = self._parse_preorder_items(items)
+            preorder_item = self._parse_preorder_items(items)
         except UnknownBackendResponse:
-            log.exception(f"Can not parse backend response for {url} for : {items}")
+            log.exception(f"Can not parse backend preorders response for {namespace}: {items}")
             raise UnknownBackendResponse
         else:
-            return item
+            return preorder_item
 
     async def get_entitlements(self):
         url = (
@@ -141,26 +144,29 @@ class EpicClient:
 
     @staticmethod
     def _parse_preorder_items(items):
-        blacklist = ['demo', 'staging', 'qa', 'dummy', 'debug', 'testing']
+        """Choses item with shortest app_name available in 'releaseInfo'.
+        We assume that unwanted app_name's ['VanilaStaging', 'VanilaDummy']
+        are always longer than base product ['Vanila']
+        """
         log.info(f"Parsing catalog looking for pre orders: {items}")
         try:
-            for item in items["elements"]:
-                for release_info in item["releaseInfo"]:
-                    bad = False
-                    for black_item in blacklist:
-                        if release_info["appId"].lower().endswith(black_item):
-                            bad = True
+            base_app_id, candidate = None, None
+            for item in items['elements']:
+                for release_info in item.get('releaseInfo', []):
+                    app_id = release_info.get('appId')
+                    if app_id and (base_app_id is None or len(app_id) < len(base_app_id)):
+                        base_app_id, candidate = app_id, item
 
-                    if not bad:
-                        categories = [category["path"] for category in item["categories"]]
-                        log.info(f"Found preorder, {item}")
-                        return PreOrderCatalogItem(item["id"], item["title"], categories, release_info["appId"])
-            raise RuntimeError()
+            if candidate is not None:
+                categories = [category["path"] for category in candidate["categories"]]
+                log.info(f"Found preorder, {candidate}")
+                return PreOrderCatalogItem(candidate["id"], candidate["title"], categories, base_app_id)
+            else:
+                raise RuntimeError(f'No appId found in releaseInfo')
+
         except (IndexError, KeyError, RuntimeError) as e:
-            log.warning(f"Could not find preorder item in {items}, blacklist was {blacklist}  error {repr(e)}")
+            log.warning(f"Could not find preorder item [{repr(e)}].\nItems: {items}")
             raise UnknownBackendResponse()
-
-
 
     async def get_product_store_info(self, query):
         data = {"query": '''\n query searchQuery($namespace: String!, $locale: String!, $query: String!, $country: String!) {

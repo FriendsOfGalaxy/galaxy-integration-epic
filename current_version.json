@@ -1,12 +1,12 @@
 {
-    "tag_name": "v0.34",
+    "tag_name": "v0.36",
     "assets": [
         {
-            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-epic/releases/download/v0.34/windows.zip",
+            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-epic/releases/download/v0.36/windows.zip",
             "name": "windows.zip"
         },
         {
-            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-epic/releases/download/v0.34/macos.zip",
+            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-epic/releases/download/v0.36/macos.zip",
             "name": "macos.zip"
         }
     ]

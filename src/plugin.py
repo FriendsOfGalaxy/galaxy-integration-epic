@@ -6,7 +6,7 @@ import webbrowser
 
 from galaxy.api.plugin import Plugin, create_and_run_plugin, JSONEncoder
 from galaxy.api.consts import Platform, LicenseType
-from galaxy.api.types import Authentication, Game, LicenseInfo, FriendInfo, LocalGame, NextStep
+from galaxy.api.types import Authentication, Game, LicenseInfo, FriendInfo, LocalGame, NextStep, LocalGameState
 from galaxy.api.errors import (
     InvalidCredentials, BackendTimeout, BackendNotAvailable,
     BackendError, NetworkError, UnknownError, UnknownBackendResponse
@@ -179,10 +179,23 @@ class EpicPlugin(Plugin):
         log.info(f"Opening Epic website {url}")
         webbrowser.open(url)
 
+    def _is_game_installed(self, game_id):
+        try:
+            game_state = self._local_provider.games[game_id]
+            if game_state is not LocalGameState.Installed:
+                return False
+            return True
+        except KeyError:
+            return False
+
     async def launch_game(self, game_id):
         if self._local_provider.is_game_running(game_id):
             log.info(f'Game already running, game_id: {game_id}.')
             return
+
+        if not self._is_game_installed(game_id):
+            log.warning(f"Game {game_id} is not installed")
+            return await self.install_game(game_id)
 
         if SYSTEM == System.WINDOWS:
             cmd = f"com.epicgames.launcher://apps/{game_id}?action=launch^&silent=true"
@@ -197,6 +210,10 @@ class EpicPlugin(Plugin):
             await self._local_provider.search_process(game_id, timeout=30)
 
     async def uninstall_game(self, game_id):
+        if not self._is_game_installed(game_id):
+            log.warning("Received uninstall command on a not installed game")
+            return
+
         slug = await self._get_store_slug(game_id)
         if slug:
             cmd = f"com.epicgames.launcher://store/product/{slug}"
@@ -209,6 +226,10 @@ class EpicPlugin(Plugin):
             await self.open_epic_browser()
 
     async def install_game(self, game_id):
+        if self._is_game_installed(game_id):
+            log.warning(f"Game {game_id} is already installed")
+            return await self.launch_game(game_id)
+
         slug = await self._get_store_slug(game_id)
         if slug:
             cmd = f"com.epicgames.launcher://store/product/{slug}"
@@ -260,6 +281,10 @@ class EpicPlugin(Plugin):
                 self.add_game(game)
                 self._owned_games[game.game_id] = game
 
+    async def shutdown_platform_client(self):
+        log.info("Shutdown platform client called")
+        await self._local_client.shutdown_platform_client()
+
     def tick(self):
         if not self._local_provider.first_run:
             self._update_local_game_statuses()
@@ -268,7 +293,8 @@ class EpicPlugin(Plugin):
             self._refresh_owned_task = asyncio.create_task(self._check_for_new_games(60))
 
     def shutdown(self):
-        self._local_provider._status_updater.cancel()
+        if self._local_provider._status_updater:
+            self._local_provider._status_updater.cancel()
         asyncio.create_task(self._http_client.close())
 
 

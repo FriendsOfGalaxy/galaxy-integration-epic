@@ -122,20 +122,16 @@ async def test_refresh_token(http_client, http_request, oauth_response):
     await http_client.authenticate_with_refresh_token("TOKEN")
     http_request.reset_mock()
 
-    unauthorized_response = MagicMock()
-    unauthorized_response.status = 401
-
-    authorized_response = MagicMock
+    authorized_response = MagicMock()
     authorized_response.status = 200
 
-    http_request.side_effect = [
-        unauthorized_response,
-        oauth_response,
-        authorized_response
-    ]
+    http_client._authorized_get = AsyncMock()
+    http_client._authorized_get.side_effect = [AuthenticationRequired(), authorized_response]
+
+    http_client._authenticate = AsyncMock()
 
     response = await http_client.get("url")
-    assert response == authorized_response
+    assert response.status == authorized_response.status
 
 
 @pytest.mark.asyncio
@@ -144,17 +140,12 @@ async def test_auth_lost(http_client, http_request, oauth_response):
     await http_client.authenticate_with_refresh_token("TOKEN")
     http_request.reset_mock()
 
-    unauthorized_response = MagicMock()
-    unauthorized_response.status = 401
+    http_client._authorized_get = MagicMock()
+    http_client._authorized_get.side_effect = AuthenticationRequired()
 
-    http_request.side_effect = [
-        unauthorized_response,
-        unauthorized_response
-    ]
+    http_client.__refresh_tokens = MagicMock()
+    http_client.__refresh_tokens.side_effects = AuthenticationRequired()
 
-    callback = MagicMock()
-    http_client.set_auth_lost_callback(callback)
     with pytest.raises(AuthenticationRequired):
         await http_client.get("url")
 
-    callback.assert_called_with()

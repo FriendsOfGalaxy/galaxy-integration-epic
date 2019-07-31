@@ -166,15 +166,16 @@ class _MacosLauncher:
         else:  # probably not but we don't know for sure
             return None
 
-    async def exec(self, cmd):
-        cmd = f"{self._OPEN} {cmd}"
+    async def exec(self, cmd, prefix_cmd=True):
+        if prefix_cmd:
+            cmd = f"{self._OPEN} {cmd}"
         log.info(f"Executing shell command: {cmd}")
         proc = await asyncio.create_subprocess_shell(cmd)
         status = None
         try:
             status = await asyncio.wait_for(proc.wait(), timeout=2)
         except asyncio.TimeoutError:
-            log.warn('Calling Epic Launcher timeouted. Probably it is fresh installed w/o executable permissions.')
+            log.warning('Calling Epic Launcher timeouted. Probably it is fresh installed w/o executable permissions.')
         else:
             if status != 0:
                 log.debug(f'Calling Epic Launcher failed with code {status}. Assuming it is not installed')
@@ -182,6 +183,11 @@ class _MacosLauncher:
                 raise ClientNotInstalled
             else:
                 self._was_client_installed = True
+
+    async def shutdown_platform_client(self):
+        await self.exec("osascript -e 'quit app \"Epic Games Launcher\"'", prefix_cmd=False)
+
+
 
 
 class _WindowsLauncher:
@@ -201,13 +207,17 @@ class _WindowsLauncher:
         except OSError:
             return False
 
-    async def exec(self, cmd):
+    async def exec(self, cmd, prefix_cmd=True):
         if not self._is_installed:
             raise ClientNotInstalled
 
-        cmd = f"{self._OPEN} {cmd}"
+        if prefix_cmd:
+            cmd = f"{self._OPEN} {cmd}"
         log.info(f"Executing shell command: {cmd}")
         subprocess.Popen(cmd, shell=True)
+
+    async def shutdown_platform_client(self):
+        await self.exec("taskkill.exe /im \"EpicGamesLauncher.exe\"", prefix_cmd=False)
 
 
 if SYSTEM == System.WINDOWS:

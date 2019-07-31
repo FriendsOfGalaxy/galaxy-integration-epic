@@ -281,9 +281,9 @@ class EpicPlugin(Plugin):
                 self.add_game(game)
                 self._owned_games[game.game_id] = game
 
-    async def shutdown_platform_client(self):
-        log.info("Shutdown platform client called")
-        await self._local_client.shutdown_platform_client()
+    # async def shutdown_platform_client(self):
+    #     log.info("Shutdown platform client called")
+    #     await self._local_client.shutdown_platform_client()
 
     def tick(self):
         if not self._local_provider.first_run:

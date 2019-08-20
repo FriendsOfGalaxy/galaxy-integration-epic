@@ -1,5 +1,6 @@
 import logging
 import aiohttp
+import asyncio
 from base64 import b64encode
 from galaxy.http import handle_exception, create_client_session
 
@@ -37,6 +38,7 @@ class AuthenticatedHttpClient:
         self._session = create_client_session()
         self._session.headers = {}
         self._session.headers["User-Agent"] = self.LAUNCHER_USER_AGENT
+        self._refreshing_task = None
 
     def set_auth_lost_callback(self, callback):
         self._auth_lost_callback = callback
@@ -73,7 +75,12 @@ class AuthenticatedHttpClient:
         except Exception as e:
             logging.exception(f"Received exception on authorized get: {repr(e)}")
             try:
-                await self._refresh_tokens()
+                if not self._refreshing_task or self._refreshing_task.done():
+                    self._refreshing_task = asyncio.create_task(self._refresh_tokens())
+                    await self._refreshing_task
+
+                while not self._refreshing_task.done():
+                    await asyncio.sleep(0.2)
             except AuthenticationRequired as e:
                 logging.exception(f"Failed to refresh tokens, received: {repr(e)}")
                 if self._auth_lost_callback:
@@ -112,7 +119,7 @@ class AuthenticatedHttpClient:
                 try:
                     response = await self._session.request("POST", self._OAUTH_URL, headers=headers, data=data)
                 except aiohttp.ClientResponseError as e:
-                    if e.status == 400:  # overwride 400 meaning for auth purpose
+                    if e.status == 400:  # override 400 meaning for auth purpose
                         raise AuthenticationRequired()
         except AuthenticationRequired as e:
             logging.exception(f"Authentication failed, grant_type: {grant_type}, exception: {repr(e)}")

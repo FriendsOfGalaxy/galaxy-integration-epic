@@ -114,7 +114,7 @@ class EpicPlugin(Plugin):
         # look for pre-orders
         entitlements = await self._epic_client.get_entitlements()
         for entitlement in entitlements:
-            if entitlement.namespace not in namespaces_scanned:
+            if entitlement.namespace not in namespaces_scanned and entitlement.namespace not in ["ue", "or"]:
                 try:
                     item = await self._epic_client.get_preorders(entitlement.namespace)
                 except UnknownBackendResponse:
@@ -214,32 +214,24 @@ class EpicPlugin(Plugin):
             log.warning("Received uninstall command on a not installed game")
             return
 
-        slug = await self._get_store_slug(game_id)
-        if slug:
-            cmd = f"com.epicgames.launcher://store/product/{slug}"
-        else:
-            cmd = f"com.epicgames.launcher://apps/"
+        cmd = "com.epicgames.launcher://store/library"
 
         try:
             await self._local_client.exec(cmd)
         except ClientNotInstalled:
-            await self.open_epic_browser()
+            await self.open_epic_browser(await self._get_store_slug(game_id))
 
     async def install_game(self, game_id):
         if self._is_game_installed(game_id):
             log.warning(f"Game {game_id} is already installed")
             return await self.launch_game(game_id)
 
-        slug = await self._get_store_slug(game_id)
-        if slug:
-            cmd = f"com.epicgames.launcher://store/product/{slug}"
-        else:
-            cmd = f"com.epicgames.launcher://apps/"
+        cmd = "com.epicgames.launcher://store/library"
 
         try:
             await self._local_client.exec(cmd)
         except ClientNotInstalled:
-            await self.open_epic_browser(slug)
+            await self.open_epic_browser(await self._get_store_slug(game_id))
 
     async def get_friends(self):
         ids = await self._epic_client.get_friends_list()
@@ -290,7 +282,9 @@ class EpicPlugin(Plugin):
             self._update_local_game_statuses()
 
         if self._refresh_owned_task and self._refresh_owned_task.done():
-            self._refresh_owned_task = asyncio.create_task(self._check_for_new_games(60))
+            # Interval set to 8 minutes because that makes the request number just below galaxy's own calls
+            # and still maintains the functionality
+            self._refresh_owned_task = asyncio.create_task(self._check_for_new_games(60*8))
 
     def shutdown(self):
         if self._local_provider._status_updater:

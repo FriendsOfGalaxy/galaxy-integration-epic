@@ -68,7 +68,7 @@ async def test_authenticate_with_exchange_code(
 ):
 
     http_request.return_value = oauth_response
-    await http_client.authenticate_with_exchage_code("CODE")
+    await http_client.authenticate_with_exchange_code("CODE")
 
     assert http_client.authenticated
     assert http_client.refresh_token == refresh_token

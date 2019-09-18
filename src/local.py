@@ -12,9 +12,14 @@ from process_watcher import ProcessWatcher
 
 if SYSTEM == System.WINDOWS:
     import winreg
+    import ctypes
     from consts import EPIC_WINREG_LOCATION
 elif SYSTEM == System.MACOS:
     from consts import EPIC_MAC_INSTALL_LOCATION
+    from AppKit import NSWorkspace
+
+import time
+
 
 
 class LauncherInstalledParser:
@@ -67,6 +72,18 @@ class LocalGamesProvider:
         self._was_running = set()
         self._first_run = True
         self._status_updater = None
+
+    @property
+    def is_client_running(self):
+        if SYSTEM == System.MACOS:
+            workspace = NSWorkspace.sharedWorkspace()
+            activeApps = workspace.runningApplications()
+            for app in activeApps:
+                if app.localizedName() == "Epic Games Launcher":
+                    return True
+            return False
+        else:
+            return self._ps_watcher.is_launcher_running()
 
     @property
     def first_run(self):
@@ -124,7 +141,7 @@ class LocalGamesProvider:
     async def parse_all_procs_if_needed(self):
         if local_client._is_installed is True:
             if len(self._was_installed) > 0 and len(self._was_running) == 0:
-                await self._ps_watcher._serach_in_all_slowly(interval=0.015)
+                await self._ps_watcher._search_in_all_slowly(interval=0.015)
 
     def check_for_running(self, check_for_new=False):
         running = self._ps_watcher.get_running_games(check_under_launcher=check_for_new)
@@ -187,7 +204,21 @@ class _MacosLauncher:
     async def shutdown_platform_client(self):
         await self.exec("osascript -e 'quit app \"Epic Games Launcher\"'", prefix_cmd=False)
 
+    async def prevent_epic_from_showing(self):
+        client_popup_wait_time = 5
+        check_frequency_delay = 0.02
 
+        workspace = NSWorkspace.sharedWorkspace()
+        activeApps = workspace.runningApplications()
+
+        end_time = time.time() + client_popup_wait_time
+        while time.time() <= end_time:
+            for app in activeApps:
+                if app.isActive() and app.localizedName() == "Epic Games Launcher":
+                    app.hide()
+                    return
+            await asyncio.sleep(check_frequency_delay)
+        log.info("Timed out on prevent epic from showing")
 
 
 class _WindowsLauncher:
@@ -218,6 +249,24 @@ class _WindowsLauncher:
 
     async def shutdown_platform_client(self):
         await self.exec("taskkill.exe /im \"EpicGamesLauncher.exe\"", prefix_cmd=False)
+
+    async def prevent_epic_from_showing(self):
+        client_popup_wait_time = 5
+        check_frequency_delay = 0.02
+
+        end_time = time.time() + client_popup_wait_time
+        hwnd = None
+        try:
+            while time.time() < end_time:
+                hwnd = hwnd or ctypes.windll.user32.FindWindowW(None, "Epic Games Launcher")
+                if hwnd and ctypes.windll.user32.IsWindowVisible(hwnd):
+                    ctypes.windll.user32.CloseWindow(hwnd)
+                    break
+                await asyncio.sleep(check_frequency_delay)
+            else:
+                log.info("Timed out closing epic popup")
+        except Exception as e:
+            log.error(f"Exception when checking if window is visible {repr(e)}")
 
 
 if SYSTEM == System.WINDOWS:

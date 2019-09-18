@@ -56,13 +56,13 @@ class _ProcessWatcher:
                     return True
         return False
 
-    def _serach_in_all(self):
+    def _search_in_all(self):
         """Fat check"""
         log.debug(f'Performing check for all processes')
         for proc in psutil.process_iter(ad_value=''):
             self.__match_process(proc)
 
-    async def _serach_in_all_slowly(self, interval=0.02):
+    async def _search_in_all_slowly(self, interval=0.02):
         """Fat check with async intervals; 0.02 lasts a few seconds"""
         log.debug(f'Performing async check in all processes; interval: {interval}')
         for proc in psutil.process_iter(ad_value=''):
@@ -114,20 +114,27 @@ class ProcessWatcher(_ProcessWatcher):
         super().__init__()
         self._watched_apps[WatchedApp(self._LAUNCHER_ID, launcher_identifier, False)]
         self._launcher_children_cache = set()
+#        self._search_in_all()
 
     @property
     def _launcher(self):
         return self._watched_apps[self._LAUNCHER_ID]
 
-    def _is_launcher_running(self):
+    def _is_launcher_tracked_and_running(self):
         return self._is_app_tracked_and_running(self._LAUNCHER_ID)
+
+    def is_launcher_running(self):
+        if self._is_launcher_tracked_and_running():
+            return True
+        self._search_in_all()
+        return self._is_launcher_tracked_and_running()
 
     async def _pool_until_launcher_start(self, timeout, long_interval):
         start = time.time()
         while time.time() - start < timeout:
-            if self._is_launcher_running():
+            if self._is_launcher_tracked_and_running():
                 return True
-            self._serach_in_all()
+            self._search_in_all()
             await asyncio.sleep(long_interval)
         return False
 
@@ -147,7 +154,7 @@ class ProcessWatcher(_ProcessWatcher):
                     return True
                 await asyncio.sleep(sint)
 
-        self._serach_in_all()
+        self._search_in_all()
         if self._watched_apps[game_id]:
             log.debug(f'Game process found in the final fallback parsing all processes')
             return True
@@ -156,6 +163,6 @@ class ProcessWatcher(_ProcessWatcher):
         """Return set of ids of currently running games.
         Note: does not actively look for launcher
         """
-        if check_under_launcher and self._is_launcher_running():
+        if check_under_launcher and self._is_launcher_tracked_and_running():
             self._search_in_children(self._launcher, recursive=True)
         return self._get_running_games()

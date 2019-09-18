@@ -7,6 +7,7 @@ from galaxy.api.types import Game, LicenseInfo
 
 from backend import EpicClient
 from definitions import Asset, CatalogItem
+import json
 
 
 @pytest.fixture
@@ -16,7 +17,7 @@ def mock_get_catalog_item():
         CatalogItem("fb39bac8278a4126989f0fe12e7353af", "Hades", ["games", "applications"])
     ]
 
-    def func(namespace, catalog_id):
+    def func(catalog_id):
         for item in known_items:
             if catalog_id == item.id:
                 return item
@@ -26,7 +27,7 @@ def mock_get_catalog_item():
 
 @pytest.mark.asyncio
 async def test_not_authenticated(plugin, backend_client):
-    backend_client.get_assets.side_effect = AuthenticationRequired()
+    backend_client.get_owned_games.side_effect = AuthenticationRequired()
     with pytest.raises(AuthenticationRequired):
         await plugin.get_owned_games()
 
@@ -38,86 +39,191 @@ def test_empty_json():
 
 
 @pytest.mark.asyncio
-async def test_simple(authenticated_plugin, backend_client, mock_get_catalog_item):
-    backend_client.get_assets.return_value = [
-        Asset("fn", "Fortnite", "4fe75bbc5a674f4f9b356b5c90567da5"),
-        Asset("min", "Min", "fb39bac8278a4126989f0fe12e7353af")
-    ]
-    backend_client.get_catalog_items_with_id.side_effect = mock_get_catalog_item
-    backend_client.get_entitlements.return_value = []
+async def test_simple(authenticated_plugin, backend_client):
+    backend_client.get_owned_games.return_value = json.loads("""
+{'data': {'Launcher': {'libraryItems': {'records': [
+{
+'catalogItemId': '4fe75bbc5a674f4f9b356b5c90567da5',
+'namespace': 'fn',
+'appName': 'Fortnite',
+'catalogItem': {
+'id': '4fe75bbc5a674f4f9b356b5c90567da5',
+'namespace': 'fn',
+'title': 'Fortnite',
+'categories': [{
+'path': 'games'
+}, {
+'path': 'applications'
+}
+],
+'releaseInfo': [{
+'platform': ['Windows', 'Mac']
+}
+],
+'dlcItemList': None,
+'mainGameItem': None
+}},
+{
+'catalogItemId': 'fb39bac8278a4126989f0fe12e7353af',
+'namespace': 'min',
+'appName': 'Min',
+'catalogItem': {
+'id': 'fb39bac8278a4126989f0fe12e7353af',
+'namespace': 'min',
+'title': 'Hades',
+'categories': [{
+'path': 'games'
+}, {
+'path': 'applications'
+}
+],
+'releaseInfo': [{
+'platform': ['Windows', 'Win32']
+}
+],
+'dlcItemList': None,
+'mainGameItem': None
+}
+}
+]
+}
+}
+}
+}""".replace("'",'"').replace("None", "null"))
     games = await authenticated_plugin.get_owned_games()
     assert games == [
-        Game("Fortnite", "Fortnite", None, LicenseInfo(LicenseType.SinglePurchase, None)),
-        Game("Min", "Hades", None, LicenseInfo(LicenseType.SinglePurchase, None))
+        Game("Fortnite", "Fortnite", [], LicenseInfo(LicenseType.SinglePurchase, None)),
+        Game("Min", "Hades", [], LicenseInfo(LicenseType.SinglePurchase, None))
     ]
 
 
 @pytest.mark.asyncio
 async def test_filter_not_games(authenticated_plugin, backend_client):
-    backend_client.get_assets.return_value = [
-        Asset("ut", "UT4Necris", "c9ee30083d61418aadcd34504a49d2b8")
-    ]
-    backend_client.get_catalog_items_with_id.return_value = CatalogItem(
-        "c9ee30083d61418aadcd34504a49d2b8", "Necris - High Poly character", ["assets"]
-    )
-    backend_client.get_entitlements.return_value = []
+    backend_client.get_owned_games.return_value = json.loads("""
+{'data': {'Launcher': {'libraryItems': {'records': [
+{
+'catalogItemId': '3df83c606f01446c9d0d126c4c15c367',
+'namespace': 'calluna',
+'appName': 'CallunaDLC001',
+'catalogItem': {
+'id': '3df83c606f01446c9d0d126c4c15c367',
+'namespace': 'calluna',
+'title': 'Control DLC001',
+'categories': [{
+'path': 'games'
+}, {
+'path': 'applications'
+}
+],
+'releaseInfo': [{
+'platform': ['Windows']
+}
+],
+'dlcItemList': None,
+'mainGameItem': {
+'id': '9afb582e90b74bdd9e2146fb79c78589'
+}
+}
+}
+],
+'dlcItemList': None,
+'mainGameItem': None
+}
+}
+}
+}""".replace("'",'"').replace("None", "null"))
     games = await authenticated_plugin.get_owned_games()
     assert games == []
 
 
 @pytest.mark.asyncio
-async def test_add_game(authenticated_plugin, backend_client, mock_get_catalog_item):
+async def test_add_game(authenticated_plugin, backend_client):
     authenticated_plugin.add_game = Mock()
-    backend_client.get_catalog_items_with_id.side_effect = mock_get_catalog_item
-
-    backend_client.get_assets.return_value = [
-        Asset("fn", "Fortnite", "4fe75bbc5a674f4f9b356b5c90567da5"),
+    backend_client.get_owned_games.return_value = json.loads("""
+    {'data': {'Launcher': {'libraryItems': {'records': [
+    {
+    'catalogItemId': '4fe75bbc5a674f4f9b356b5c90567da5',
+    'namespace': 'fn',
+    'appName': 'Fortnite',
+    'catalogItem': {
+    'id': '4fe75bbc5a674f4f9b356b5c90567da5',
+    'namespace': 'fn',
+    'title': 'Fortnite',
+    'categories': [{
+    'path': 'games'
+    }, {
+    'path': 'applications'
+    }
+    ],
+    'releaseInfo': [{
+    'platform': ['Windows', 'Mac']
+    }
+    ],
+    'dlcItemList': None,
+    'mainGameItem': None
+    }}
     ]
-    backend_client.get_entitlements.return_value = []
+    }
+    }
+    }
+    }""".replace("'", '"').replace("None", "null"))
     games = await authenticated_plugin.get_owned_games()
     assert games == [
-        Game("Fortnite", "Fortnite", None, LicenseInfo(LicenseType.SinglePurchase, None)),
+        Game("Fortnite", "Fortnite", [], LicenseInfo(LicenseType.SinglePurchase, None)),
     ]
 
     # buy game meanwhile
-    bought_game = Game("Min", "Hades", None, LicenseInfo(LicenseType.SinglePurchase, None))
-    backend_client.get_assets.return_value = [
-        Asset("fn", "Fortnite", "4fe75bbc5a674f4f9b356b5c90567da5"),
-        Asset("min", "Min", "fb39bac8278a4126989f0fe12e7353af")
+    bought_game = Game("Min", "Hades", [], LicenseInfo(LicenseType.SinglePurchase, None))
+    backend_client.get_owned_games.return_value = json.loads("""
+    {'data': {'Launcher': {'libraryItems': {'records': [
+    {
+    'catalogItemId': '4fe75bbc5a674f4f9b356b5c90567da5',
+    'namespace': 'fn',
+    'appName': 'Fortnite',
+    'catalogItem': {
+    'id': '4fe75bbc5a674f4f9b356b5c90567da5',
+    'namespace': 'fn',
+    'title': 'Fortnite',
+    'categories': [{
+    'path': 'games'
+    }, {
+    'path': 'applications'
+    }
+    ],
+    'releaseInfo': [{
+    'platform': ['Windows', 'Mac']
+    }
+    ],
+    'dlcItemList': None,
+    'mainGameItem': None
+    }},
+    {
+    'catalogItemId': 'fb39bac8278a4126989f0fe12e7353af',
+    'namespace': 'min',
+    'appName': 'Min',
+    'catalogItem': {
+    'id': 'fb39bac8278a4126989f0fe12e7353af',
+    'namespace': 'min',
+    'title': 'Hades',
+    'categories': [{
+    'path': 'games'
+    }, {
+    'path': 'applications'
+    }
+    ],
+    'releaseInfo': [{
+    'platform': ['Windows', 'Win32']
+    }
+    ],
+    'dlcItemList': None,
+    'mainGameItem': None
+    }
+    }
     ]
+    }
+    }
+    }
+    }""".replace("'", '"').replace("None", "null"))
     await authenticated_plugin._check_for_new_games(0)
     authenticated_plugin.add_game.assert_called_with(bought_game)
 
-
-@pytest.mark.asyncio
-async def test_game_info_cache(authenticated_plugin, backend_client, mock_get_catalog_item):
-    backend_client.get_catalog_items_with_id.side_effect = mock_get_catalog_item
-    backend_client.get_assets.return_value = [
-        Asset("fn", "Fortnite", "4fe75bbc5a674f4f9b356b5c90567da5"),
-        Asset("min", "Min", "fb39bac8278a4126989f0fe12e7353af")
-    ]
-    authenticated_plugin._initialize_cache({
-        'credentials': {},
-        'game_info': '{"Min": {"namespace": "min", "app_name": "Min", "title": "Hades"}, '
-                     '"Fortnite": {"namespace": "fn", "app_name": "Fortnite", "title": "Fortnite"}}'
-    })
-    backend_client.get_entitlements.return_value = []
-    await authenticated_plugin.get_owned_games()
-    backend_client.get_catalog_items_with_id.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_game_info_cache_partialy(authenticated_plugin, backend_client, mock_get_catalog_item):
-    fortnite = Asset("fn", "Fortnite", "4fe75bbc5a674f4f9b356b5c90567da5")
-    backend_client.get_assets.return_value = [
-        Asset("min", "Min", "fb39bac8278a4126989f0fe12e7353af"),
-        fortnite
-    ]
-    backend_client.get_catalog_items_with_id.side_effect = mock_get_catalog_item
-    authenticated_plugin._initialize_cache({
-        'credentials': {},
-        'game_info': '{"Min": {"namespace": "min", "app_name": "Min", "title": "Hades"}}'
-    })
-    backend_client.get_entitlements.return_value = []
-    await authenticated_plugin.get_owned_games()
-    backend_client.get_catalog_items_with_id.assert_called_once_with(fortnite.namespace, fortnite.catalog_id)

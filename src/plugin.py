@@ -6,18 +6,18 @@ import webbrowser
 
 from galaxy.api.plugin import Plugin, create_and_run_plugin, JSONEncoder
 from galaxy.api.consts import Platform, LicenseType
-from galaxy.api.types import Authentication, Game, LicenseInfo, FriendInfo, LocalGame, NextStep, LocalGameState
+from galaxy.api.types import Authentication, Game, LicenseInfo, FriendInfo, LocalGame, NextStep, LocalGameState, GameTime, Dlc
 from galaxy.api.errors import (
     InvalidCredentials, BackendTimeout, BackendNotAvailable,
-    BackendError, NetworkError, UnknownError, UnknownBackendResponse
+    BackendError, NetworkError, UnknownError
 )
 
 from backend import EpicClient
 from http_client import AuthenticatedHttpClient
 from version import __version__
 from local import LocalGamesProvider, local_client, ClientNotInstalled
-from consts import System, SYSTEM, AUTH_REDIRECT_URL, AUTH_JS, AUTH_PARAMS
-from definitions import GameInfo
+from consts import System, SYSTEM, AUTH_REDIRECT_URL, AUTH_PARAMS
+from definitions import GameInfo, EpicDlc
 
 
 class EpicPlugin(Plugin):
@@ -42,7 +42,7 @@ class EpicPlugin(Plugin):
 
     async def authenticate(self, stored_credentials=None):
         if not stored_credentials:
-            return NextStep("web_session", AUTH_PARAMS, js=AUTH_JS)
+            return NextStep("web_session", AUTH_PARAMS)
 
         refresh_token = stored_credentials["refresh_token"]
         try:
@@ -56,12 +56,17 @@ class EpicPlugin(Plugin):
 
     async def pass_login_credentials(self, step, credentials, cookies):
         try:
-            await self._http_client.authenticate_with_exchage_code(
-                credentials["end_uri"].split(AUTH_REDIRECT_URL, 1)[1]
-            )
+            if cookies:
+                cookiez = {}
+                for cookie in cookies:
+                    cookiez[cookie['name']] = cookie['value']
+                self._http_client.update_cookies(cookiez)
+            exchange_code = await self._http_client.retrieve_exchange_code()
+            await self._http_client.authenticate_with_exchange_code(exchange_code)
         except (BackendNotAvailable, BackendError, BackendTimeout, NetworkError, UnknownError) as e:
             raise e
-        except Exception:
+        except Exception as e:
+            log.error(repr(e))
             raise InvalidCredentials()
 
         return await self._do_auth()
@@ -81,50 +86,53 @@ class EpicPlugin(Plugin):
         self.persistent_cache['credentials'] = self._encoder.encode(credentials)
         super().store_credentials(credentials)
 
+    def _get_dlcs(self, products):
+        dlcs = []
+        for game in products['data']['Launcher']['libraryItems']['records']:
+            try:
+                if 'mainGameItem' in game['catalogItem'] and game['catalogItem']['mainGameItem']:
+                    dlcs.append(EpicDlc(game['catalogItem']['mainGameItem']['id'], game['catalogItemId'], game['catalogItem']['title']))
+            except (TypeError, KeyError) as e:
+                log.error(f"Exception while trying to parse product {repr(e)}\nProduct {game}")
+        return dlcs
+
+    def _parse_owned_product(self, game, dlcs):
+        games_dlcs = []
+        is_game = False
+        is_application = False
+
+        for category in game['catalogItem']['categories']:
+            if category['path'] == 'games':
+                is_game = True
+            if category['path'] == 'applications':
+                is_application = True
+
+        if not is_game or not is_application:
+            return
+
+        for dlc in dlcs:
+            if game['catalogItemId'] == dlc.parent_id:
+                games_dlcs.append(Dlc(dlc.dlc_id, dlc.dlc_title, LicenseInfo(LicenseType.SinglePurchase)))
+            if game['catalogItemId'] == dlc.dlc_id:
+                # product is a dlc, skip
+                return
+
+        self._game_info_cache[game['appName']] = GameInfo(game['namespace'],  game['appName'], game['catalogItem']['title'])
+        return Game(game['appName'], game['catalogItem']['title'], games_dlcs, LicenseInfo(LicenseType.SinglePurchase))
+
     async def _get_owned_games(self):
-        games = []
-
-        assets = await self._epic_client.get_assets()
-        asset_by_id = {}
-        requests = []
-        namespaces_scanned = []
-        for asset in assets:
-            namespaces_scanned.append(asset.namespace)
-            if asset.namespace == "ue":
-                continue
-            if asset.app_name in self._game_info_cache:
-                log.debug(f'asset {asset} found in cache')
-                title = self._game_info_cache[asset.app_name].title
-                games.append(
-                    Game(asset.app_name, title, None, LicenseInfo(LicenseType.SinglePurchase))
-                )
-                continue
-            asset_by_id[asset.catalog_id] = asset
-            requests.append(self._epic_client.get_catalog_items_with_id(asset.namespace, asset.catalog_id))
-
-        items = await asyncio.gather(*requests)
-        for it in items:
-            if "games" not in it.categories:
-                continue
-            asset = asset_by_id[it.id]
-            game = Game(asset.app_name, it.title, None, LicenseInfo(LicenseType.SinglePurchase))
-            games.append(game)
-            self._game_info_cache[asset.app_name] = GameInfo(asset.namespace, asset.app_name, it.title)
-
-        # look for pre-orders
-        entitlements = await self._epic_client.get_entitlements()
-        for entitlement in entitlements:
-            if entitlement.namespace not in namespaces_scanned and entitlement.namespace not in ["ue", "or"]:
-                try:
-                    item = await self._epic_client.get_preorders(entitlement.namespace)
-                except UnknownBackendResponse:
-                    continue
-                game = Game(item.app_name, item.title, None, LicenseInfo(LicenseType.SinglePurchase))
-                games.append(game)
-                self._game_info_cache[item.app_name] = GameInfo(entitlement.namespace, item.app_name, item.title)
-
+        parsed_games = []
+        owned_products = await self._epic_client.get_owned_games()
+        dlcs = self._get_dlcs(owned_products)
+        for product in owned_products['data']['Launcher']['libraryItems']['records']:
+            try:
+                parsed_game = self._parse_owned_product(product, dlcs)
+                if parsed_game:
+                    parsed_games.append(parsed_game)
+            except (TypeError, KeyError) as e:
+                log.error(f"Exception while trying to parse product {repr(e)}\nProduct {product}")
         self._store_cache('game_info', self._game_info_cache)
-        return games
+        return parsed_games
 
     async def get_owned_games(self):
         games = await self._get_owned_games()
@@ -273,8 +281,30 @@ class EpicPlugin(Plugin):
                 self.add_game(game)
                 self._owned_games[game.game_id] = game
 
+    async def prepare_game_times_context(self, game_ids):
+        return await self._epic_client.get_playtime()
+
+    async def get_game_time(self, game_id, context):
+        if context:
+            playtime = context
+        else:
+            playtime = await self.prepare_game_times_context(None)
+        for item in playtime['data']['PlaytimeTracking']['total']:
+            if item['artifactId'] == game_id:
+                time_played = int(item['totalTime']/60)
+                if not time_played:
+                    time_played = None
+                return GameTime(game_id, time_played, None)
+
+    # async def launch_platform_client(self):
+    #     if self._local_provider.is_client_running:
+    #         log.info("Epic client already running")
+    #         return
+    #     cmd = "com.epicgames.launcher:"
+    #     await self._local_client.exec(cmd)
+    #     asyncio.create_task(self._local_client.prevent_epic_from_showing())
+    #
     # async def shutdown_platform_client(self):
-    #     log.info("Shutdown platform client called")
     #     await self._local_client.shutdown_platform_client()
 
     def tick(self):
@@ -289,7 +319,8 @@ class EpicPlugin(Plugin):
     def shutdown(self):
         if self._local_provider._status_updater:
             self._local_provider._status_updater.cancel()
-        asyncio.create_task(self._http_client.close())
+        if self._http_client:
+            asyncio.create_task(self._http_client.close())
 
 
 def main():

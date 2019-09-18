@@ -2,9 +2,10 @@ from unittest.mock import MagicMock, PropertyMock
 import pytest
 
 from utils import AsyncMock
-
+import platform
 from plugin import EpicPlugin
 from process_watcher import ProcessWatcher
+from consts import LAUNCHER_PROCESS_IDENTIFIER
 
 
 @pytest.fixture
@@ -33,8 +34,9 @@ def http_client(account_id, refresh_token, authenticated):
     type(mock).account_id = account_id
     type(mock).refresh_token = refresh_token
     type(mock).authenticated = authenticated
-    mock.authenticate_with_exchage_code = AsyncMock()
+    mock.authenticate_with_exchange_code = AsyncMock()
     mock.authenticate_with_refresh_token = AsyncMock()
+    mock.retrieve_exchange_code = AsyncMock()
     mock.close = AsyncMock()
     mock.set_auth_lost_callback = MagicMock()
     return mock
@@ -47,14 +49,13 @@ def backend_client():
     mock.get_users_info = AsyncMock()
     mock.get_assets = AsyncMock()
     mock.get_catalog_items_with_id = AsyncMock()
-    mock.get_entitlements = AsyncMock()
-    mock.get_catalog_items_with_namespace = AsyncMock()
+    mock.get_owned_games = AsyncMock()
     return mock
 
 
 @pytest.fixture
 def process_watcher():
-    process_watcher = ProcessWatcher(MagicMock)
+    process_watcher = ProcessWatcher(LAUNCHER_PROCESS_IDENTIFIER)
     return process_watcher
 
 

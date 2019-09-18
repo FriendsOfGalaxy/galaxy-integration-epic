@@ -3,6 +3,7 @@ import aiohttp
 import asyncio
 from base64 import b64encode
 from galaxy.http import handle_exception, create_client_session
+from yarl import URL
 
 from galaxy.api.errors import (
     AuthenticationRequired, UnknownBackendResponse
@@ -12,6 +13,19 @@ from galaxy.api.errors import (
 def basic_auth_credentials(login, password):
     credentials = "{}:{}".format(login, password)
     return b64encode(credentials.encode()).decode("ascii")
+
+class CookieJar(aiohttp.CookieJar):
+    def __init__(self):
+        super().__init__()
+        self._cookies_updated_callback = None
+
+    def set_cookies_updated_callback(self, callback):
+        self._cookies_updated_callback = callback
+
+    def update_cookies(self, cookies, url=URL()):
+        super().update_cookies(cookies, url)
+        if cookies and self._cookies_updated_callback:
+            self._cookies_updated_callback(list(self))
 
 
 class AuthenticatedHttpClient:
@@ -35,15 +49,27 @@ class AuthenticatedHttpClient:
         self._account_id = None
         self._auth_lost_callback = None
         self._store_credentials = store_credentials_callback
-        self._session = create_client_session()
+        self._cookie_jar = CookieJar()
+        self._session = create_client_session(cookie_jar=self._cookie_jar)
         self._session.headers = {}
         self._session.headers["User-Agent"] = self.LAUNCHER_USER_AGENT
         self._refreshing_task = None
 
+    def set_cookies_updated_callback(self, callback):
+        self._cookie_jar.set_cookies_updated_callback(callback)
+
+    def update_cookies(self, cookies):
+        self._cookie_jar.update_cookies(cookies)
+
     def set_auth_lost_callback(self, callback):
         self._auth_lost_callback = callback
 
-    async def authenticate_with_exchage_code(self, exchange_code):
+    async def retrieve_exchange_code(self):
+        response = await self.request('GET', "https://www.epicgames.com/id/api/exchange")
+        response = await response.json()
+        return response['code']
+
+    async def authenticate_with_exchange_code(self, exchange_code):
         await self._authenticate("exchange_code", exchange_code)
 
     async def authenticate_with_refresh_token(self, refresh_token):
@@ -66,14 +92,24 @@ class AuthenticatedHttpClient:
     def refresh_token(self):
         return self._refresh_token
 
-    async def get(self, *args, **kwargs):
+    async def _validate_graph_response(self, response):
+        response = await response.json()
+        if "errors" in response:
+            for error in response["errors"]:
+                if '401' in error["message"]:
+                    raise AuthenticationRequired()
+        return response
+
+    async def do_request(self, method,  *args, **kwargs):
         if not self.authenticated:
             raise AuthenticationRequired()
 
         try:
-            return await self._authorized_get(*args, **kwargs)
+            if 'graph' in kwargs:
+                return await self._validate_graph_response(await method(*args, **kwargs))
+            return await method(*args, **kwargs)
         except Exception as e:
-            logging.exception(f"Received exception on authorized get: {repr(e)}")
+            logging.exception(f"Received exception on authorized request: {repr(e)}")
             try:
                 if not self._refreshing_task or self._refreshing_task.done():
                     self._refreshing_task = asyncio.create_task(self._refresh_tokens())
@@ -90,10 +126,15 @@ class AuthenticatedHttpClient:
                 logging.exception(f"Got exception {repr(e)}")
                 raise
 
-            return await self._authorized_get(*args, **kwargs)
+            if 'graph' in kwargs:
+                return await self._validate_graph_response(await method(*args, **kwargs))
+            return await method(*args, **kwargs)
+
+    async def get(self, *args, **kwargs):
+        return await self.do_request(self._authorized_get, *args, **kwargs)
 
     async def post(self, *args, **kwargs):
-        return await self.request("POST", *args, **kwargs)
+        return await self.do_request(self._authorized_post, *args, **kwargs)
 
     async def close(self):
         await self._session.close()
@@ -119,6 +160,7 @@ class AuthenticatedHttpClient:
                 try:
                     response = await self._session.request("POST", self._OAUTH_URL, headers=headers, data=data)
                 except aiohttp.ClientResponseError as e:
+                    logging.error(e)
                     if e.status == 400:  # override 400 meaning for auth purpose
                         raise AuthenticationRequired()
         except AuthenticationRequired as e:
@@ -136,11 +178,23 @@ class AuthenticatedHttpClient:
             logging.exception("Could not parse backend response when authenticating")
             raise UnknownBackendResponse()
 
-    async def _authorized_get(self, *args, **kwargs):
+    def set_authorization_headers(self, **kwargs):
         headers = kwargs.setdefault("headers", {})
         headers["Authorization"] = "bearer " + self._access_token
         headers["User-Agent"] = self.LAUNCHER_USER_AGENT
+        return kwargs
+
+    async def _authorized_get(self, *args, **kwargs):
+        kwargs = self.set_authorization_headers(**kwargs)
+        if 'graph' in kwargs:
+            kwargs.pop('graph')
         return await self._session.request("GET", *args, **kwargs)
+
+    async def _authorized_post(self, *args, **kwargs):
+        kwargs = self.set_authorization_headers(**kwargs)
+        if 'graph' in kwargs:
+            kwargs.pop('graph')
+        return await self._session.request("POST", *args, **kwargs)
 
     def _auth_lost(self):
         self._access_token = None

@@ -32,8 +32,8 @@ LAUNCHER_INSTALLED_PATH = os.path.join(_program_data,
                                        'UnrealEngineLauncher',
                                        'LauncherInstalled.dat')
 
-AUTH_URL = r"https://launcher-website-prod07.ol.epicgames.com/epic-login"
-AUTH_REDIRECT_URL = r"https://localhost/exchange?code="
+AUTH_URL = r"https://www.epicgames.com/id/login"
+AUTH_REDIRECT_URL = r"https://www.epicgames.com/id/api/redirect?"
 
 
 def regex_pattern(regex):
@@ -42,35 +42,8 @@ def regex_pattern(regex):
 
 AUTH_PARAMS = {
     "window_title": "Login to Epic\u2122",
-    "window_width": 700,
-    "window_height": 600,
+    "window_width": 580,
+    "window_height": 750,
     "start_uri": AUTH_URL,
     "end_uri_regex": regex_pattern(AUTH_REDIRECT_URL)
 }
-
-AUTH_JS = {regex_pattern(r"login/showPleaseWait?"): [
-    r'''
-    [].forEach.call(document.scripts, function(script)
-    {
-        if (script.text && script.text.includes("loginWithExchangeCode"))
-        {
-            var codeMatch = script.text.match(/(?<=loginWithExchangeCode\(\')\S+(?=\',)/)
-            if (codeMatch)
-                window.location.replace("''' + AUTH_REDIRECT_URL + r'''" + codeMatch[0]);
-        }
-    });
-    '''
-], regex_pattern(r"login/launcher"): [
-    r'''
-    document.addEventListener('click', function (event) {
-
-    if (!event.target.matches('#forgotPasswordLink')) return;
-
-    event.preventDefault();
-
-    window.open('https://accounts.epicgames.com/requestPasswordReset', '_blank');
-    document.location.reload(true)
-
-}, false);
-    '''
-]}

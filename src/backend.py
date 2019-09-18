@@ -3,7 +3,7 @@ import logging as log
 
 from galaxy.api.errors import UnknownBackendResponse
 
-from definitions import Asset, CatalogItem, Entitlement, PreOrderCatalogItem
+from definitions import Asset, CatalogItem
 
 
 class EpicClient:
@@ -70,37 +70,6 @@ class EpicClient:
         else:
             return item
 
-    async def get_catalog_items_with_namespace(self, namespace):
-        url = (
-            "https://catalog-public-service-prod06.ol.epicgames.com"
-            "/catalog/api/shared/namespace/{}/items?category=games"
-        ).format(namespace)
-
-        response = await self._http_client.get(url)
-        return await response.json()
-
-    async def get_preorders(self, namespace):
-        items = await self.get_catalog_items_with_namespace(namespace)
-        try:
-            preorder_item = self._parse_preorder_items(items)
-        except UnknownBackendResponse:
-            log.exception(f"Can not parse backend preorders response for {namespace}: {items}")
-            raise UnknownBackendResponse
-        else:
-            return preorder_item
-
-    async def get_entitlements(self):
-        url = (
-            "https://entitlement-public-service-prod08.ol.epicgames.com/entitlement"
-            f"/api/account/{self._http_client.account_id}/entitlements?start=0&count=5000"
-        )
-        response = await self._http_client.get(url)
-        response = await response.json()
-        entitlements = set()
-        entitlements.update(self._parse_entitlements(response))
-        log.info(entitlements)
-        return entitlements
-
     async def get_friends_list(self):
         url = (
             "https://friends-public-service-prod06.ol.epicgames.com/friends/api/public/"
@@ -109,17 +78,6 @@ class EpicClient:
         response = await self._http_client.get(url)
         items = await response.json()
         return items
-
-    @staticmethod
-    def _parse_entitlements(entitlements):
-        result = []
-        for entitlement in entitlements:
-            try:
-                result.append(Entitlement(entitlement["namespace"]))
-            except KeyError as e:
-                log.exception(f"Can not parse assets backend response: {e}")
-                raise UnknownBackendResponse()
-        return result
 
     @staticmethod
     def _parse_assets(items):
@@ -140,32 +98,6 @@ class EpicClient:
             return CatalogItem(item["id"], item["title"], categories)
         except (IndexError, KeyError) as e:
             log.warning(f"Could not parse catalog item in {items}, error {repr(e)}")
-            raise UnknownBackendResponse()
-
-    @staticmethod
-    def _parse_preorder_items(items):
-        """Choses item with shortest app_name available in 'releaseInfo'.
-        We assume that unwanted app_name's ['VanilaStaging', 'VanilaDummy']
-        are always longer than base product ['Vanila']
-        """
-        log.info(f"Parsing catalog looking for pre orders: {items}")
-        try:
-            base_app_id, candidate = None, None
-            for item in items['elements']:
-                for release_info in item.get('releaseInfo', []):
-                    app_id = release_info.get('appId')
-                    if app_id and (base_app_id is None or len(app_id) < len(base_app_id)):
-                        base_app_id, candidate = app_id, item
-
-            if candidate is not None:
-                categories = [category["path"] for category in candidate["categories"]]
-                log.info(f"Found preorder, {candidate}")
-                return PreOrderCatalogItem(candidate["id"], candidate["title"], categories, base_app_id)
-            else:
-                raise RuntimeError(f'No appId found in releaseInfo')
-
-        except (IndexError, KeyError, RuntimeError) as e:
-            log.warning(f"Could not find preorder item [{repr(e)}].\nItems: {items}")
             raise UnknownBackendResponse()
 
     async def get_product_store_info(self, query):
@@ -190,4 +122,73 @@ class EpicClient:
                 }
         response = await self._http_client.post("https://graphql.epicgames.com/graphql", json=data)
         response = await response.json()
+        return response
+
+    async def get_playtime(self):
+        data = {"query": '''\n query playtimeTrackingQuery($accountId: String!){
+         PlaytimeTracking { 
+            total(accountId: $accountId) { 
+                artifactId
+                totalTime 
+                }
+            } 
+        }''',
+                "variables": {"accountId": f"{self._http_client.account_id}"}
+                }
+
+        response = await self._http_client.post("https://graphql.epicgames.com/graphql", json=data, graph=True)
+        return response
+
+    async def get_owned_games(self):
+        data = {"query":'''\n query libraryQuery($locale: String, $cursor: String, $excludeNs: [String])
+        {
+            Launcher 
+            {
+                libraryItems
+                (
+                    cursor: $cursor, params: {excludeNs: $excludeNs})
+                        { 
+                        records
+                            {
+                            catalogItemId
+                            namespace
+                            appName
+                            catalogItem(locale:$locale)     
+                                {
+                                    id
+                                    namespace 
+                                    title 
+                                    categories 
+                                        { 
+                                        path
+                                        }
+                                    releaseInfo   
+                                        { 
+                                        platform
+                                        } 
+                                    dlcItemList 
+                                        { 
+                                        id
+                                        } 
+                                    mainGameItem 
+                                        { 
+                                        id
+                                        }
+                                    customAttributes 
+                                        {
+                                        key
+                                        value
+                                        }
+                                }
+                            }
+                            responseMetadata 
+                                { 
+                                nextCursor
+                                }
+                            } 
+                        }
+                    }''',
+                        "variables": {"locale": "en-US", "cursor": "", "excludeNs": ["ue"]}
+                                  }
+        response = await self._http_client.post("https://graphql.epicgames.com/graphql", json=data, graph=True)
         return response

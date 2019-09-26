@@ -289,13 +289,13 @@ class EpicPlugin(Plugin):
             playtime = context
         else:
             playtime = await self.prepare_game_times_context(None)
-        for item in playtime['data']['PlaytimeTracking']['total']:
-            if item['artifactId'] == game_id:
-                time_played = int(item['totalTime']/60)
-                if not time_played:
-                    time_played = None
-                return GameTime(game_id, time_played, None)
 
+        time_played = None
+        for item in playtime['data']['PlaytimeTracking']['total']:
+            if item['artifactId'] == game_id and 'totalTime' in item:
+                time_played = int(item['totalTime']/60)
+                break
+        return GameTime(game_id, time_played, None)
     # async def launch_platform_client(self):
     #     if self._local_provider.is_client_running:
     #         log.info("Epic client already running")

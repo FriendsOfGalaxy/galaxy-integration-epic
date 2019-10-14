@@ -201,10 +201,6 @@ class EpicPlugin(Plugin):
             log.info(f'Game already running, game_id: {game_id}.')
             return
 
-        if not self._is_game_installed(game_id):
-            log.warning(f"Game {game_id} is not installed")
-            return await self.install_game(game_id)
-
         if SYSTEM == System.WINDOWS:
             cmd = f"com.epicgames.launcher://apps/{game_id}?action=launch^&silent=true"
         elif SYSTEM == System.MACOS:

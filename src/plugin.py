@@ -292,16 +292,17 @@ class EpicPlugin(Plugin):
                 time_played = int(item['totalTime']/60)
                 break
         return GameTime(game_id, time_played, None)
-    # async def launch_platform_client(self):
-    #     if self._local_provider.is_client_running:
-    #         log.info("Epic client already running")
-    #         return
-    #     cmd = "com.epicgames.launcher:"
-    #     await self._local_client.exec(cmd)
-    #     asyncio.create_task(self._local_client.prevent_epic_from_showing())
-    #
-    # async def shutdown_platform_client(self):
-    #     await self._local_client.shutdown_platform_client()
+
+    async def launch_platform_client(self):
+        if self._local_provider.is_client_running:
+            log.info("Epic client already running")
+            return
+        cmd = "com.epicgames.launcher:"
+        await self._local_client.exec(cmd)
+        asyncio.create_task(self._local_client.prevent_epic_from_showing())
+
+    async def shutdown_platform_client(self):
+        await self._local_client.shutdown_platform_client()
 
     def tick(self):
         if not self._local_provider.first_run:
@@ -312,11 +313,11 @@ class EpicPlugin(Plugin):
             # and still maintains the functionality
             self._refresh_owned_task = asyncio.create_task(self._check_for_new_games(60*8))
 
-    def shutdown(self):
+    async def shutdown(self):
         if self._local_provider._status_updater:
             self._local_provider._status_updater.cancel()
         if self._http_client:
-            asyncio.create_task(self._http_client.close())
+            await self._http_client.close()
 
 
 def main():

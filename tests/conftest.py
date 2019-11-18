@@ -78,7 +78,7 @@ async def plugin(http_client, backend_client, local_provider, mocker):
 
     yield plugin
 
-    plugin.shutdown()
+    await plugin.shutdown()
 
 
 @pytest.fixture()

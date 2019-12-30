@@ -3,17 +3,14 @@
 credentials.data
 Pipfile
 
-# pytest
+# tools
 __pycache__/
 .pytest_cache/
+.mypy_cache/
 
-# pyinsaller
 build/
 output/
 *.spec
 
-# pycharm
 .idea/
-
-# vscode
 .vscode/

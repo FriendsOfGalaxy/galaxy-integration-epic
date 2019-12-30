@@ -139,7 +139,7 @@ class EpicClient:
         response = await self._http_client.post("https://graphql.epicgames.com/graphql", json=data, graph=True)
         return response
 
-    async def get_owned_games(self):
+    async def get_owned_games(self,cursor=""):
         data = {"query":'''\n query libraryQuery($locale: String, $cursor: String, $excludeNs: [String])
         {
             Launcher 
@@ -188,7 +188,12 @@ class EpicClient:
                             } 
                         }
                     }''',
-                        "variables": {"locale": "en-US", "cursor": "", "excludeNs": ["ue"]}
+                        "variables": {"locale": "en-US", "cursor": cursor, "excludeNs": ["ue"]}
                                   }
         response = await self._http_client.post("https://graphql.epicgames.com/graphql", json=data, graph=True)
+        log.info(response)
+        cursor = response['data']['Launcher']['libraryItems']['responseMetadata']['nextCursor']
+        if cursor:
+            next_page = await self.get_owned_games(cursor)
+            response['data']['Launcher']['libraryItems']['records'].extend( next_page['data']['Launcher']['libraryItems']['records'])
         return response

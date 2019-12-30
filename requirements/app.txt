@@ -1,6 +1,6 @@
 aiohttp==3.5.4
-galaxy.plugin.api==0.58
+galaxy.plugin.api==0.62
 certifi==2019.3.9
-psutil==5.6.1
+psutil==5.6.3
 pyobjc-core==5.2; sys_platform == 'darwin'
 pyobjc-framework-Cocoa==5.2; sys_platform == 'darwin'

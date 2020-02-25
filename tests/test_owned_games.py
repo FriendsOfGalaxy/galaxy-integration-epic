@@ -9,7 +9,6 @@ from backend import EpicClient
 from definitions import Asset, CatalogItem
 import json
 
-
 @pytest.fixture
 def mock_get_catalog_item():
     known_items = [

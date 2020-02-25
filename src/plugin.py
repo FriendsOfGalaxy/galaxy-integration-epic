@@ -124,11 +124,14 @@ class EpicPlugin(Plugin):
         parsed_games = []
         owned_products = await self._epic_client.get_owned_games()
         dlcs = self._get_dlcs(owned_products)
+        product_mapping = await self._epic_client.get_productmapping()
         for product in owned_products['data']['Launcher']['libraryItems']['records']:
             try:
                 parsed_game = self._parse_owned_product(product, dlcs)
                 if parsed_game:
-                    parsed_games.append(parsed_game)
+                    cached_game_info = self._game_info_cache.get(parsed_game.game_id)
+                    if cached_game_info.namespace in product_mapping:
+                        parsed_games.append(parsed_game)
             except (TypeError, KeyError) as e:
                 log.error(f"Exception while trying to parse product {repr(e)}\nProduct {product}")
         self._store_cache('game_info', self._game_info_cache)

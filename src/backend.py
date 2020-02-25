@@ -139,6 +139,11 @@ class EpicClient:
         response = await self._http_client.post("https://graphql.epicgames.com/graphql", json=data, graph=True)
         return response
 
+    async def get_productmapping(self):
+        response = await self._http_client.get("https://www.epicgames.com/store/api/content/productmapping")
+        response = await response.json()
+        return response
+
     async def get_owned_games(self,cursor=""):
         data = {"query":'''\n query libraryQuery($locale: String, $cursor: String, $excludeNs: [String])
         {

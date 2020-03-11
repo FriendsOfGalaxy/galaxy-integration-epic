@@ -140,7 +140,7 @@ class EpicClient:
         return response
 
     async def get_productmapping(self):
-        response = await self._http_client.get("https://www.epicgames.com/store/api/content/productmapping")
+        response = await self._http_client.get("https://store-content.ak.epicgames.com/api/content/productmapping")
         response = await response.json()
         return response
 

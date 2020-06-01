@@ -21,6 +21,16 @@ elif SYSTEM == System.MACOS:
 import time
 
 
+def get_size_at_path(start_path):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+
+    return total_size
 
 class LauncherInstalledParser:
     def __init__(self):
@@ -137,6 +147,9 @@ class LocalGamesProvider:
         self._update_game_statuses(set(self._was_installed), set(installed), LocalGameState.Installed)
         self._ps_watcher.watched_games = installed
         self._was_installed = installed
+
+    def get_installed_paths(self):
+        return self._parser.parse()
 
     async def parse_all_procs_if_needed(self):
         if local_client._is_installed is True:

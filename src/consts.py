@@ -33,7 +33,7 @@ LAUNCHER_INSTALLED_PATH = os.path.join(_program_data,
                                        'LauncherInstalled.dat')
 
 AUTH_URL = r"https://www.epicgames.com/id/login"
-AUTH_REDIRECT_URL = r"https://www.epicgames.com/id/api/redirect?"
+AUTH_REDIRECT_URL = r"https://epicgames.com/account/personal"
 
 
 def regex_pattern(regex):

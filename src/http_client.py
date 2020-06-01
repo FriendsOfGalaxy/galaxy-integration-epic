@@ -65,7 +65,32 @@ class AuthenticatedHttpClient:
         self._auth_lost_callback = callback
 
     async def retrieve_exchange_code(self):
-        response = await self.request('GET', "https://www.epicgames.com/id/api/exchange")
+        xsrf_token = None
+        old_cookies_values = [cookie.value for cookie in self._session.cookie_jar]
+        await self.request('GET', "https://www.epicgames.com/id/api/authenticate")
+        await self.request('GET', "https://www.epicgames.com/id/api/csrf")
+        cookies = [cookie for cookie in self._session.cookie_jar]
+        cookies_to_set = dict()
+
+        for new_cookie in cookies:
+            if new_cookie.key in cookies_to_set and new_cookie.value in old_cookies_values:
+                continue
+            cookies_to_set[new_cookie.key] = new_cookie.value
+            if new_cookie.key == 'XSRF-TOKEN':
+                xsrf_token = new_cookie.value
+
+        self._cookie_jar = CookieJar()
+        self._session = create_client_session(cookie_jar=self._cookie_jar)
+        self.update_cookies(cookies_to_set)
+        headers = {
+            "X-Epic-Event-Action": "login",
+            "X-Epic-Event-Category": "login",
+            "X-Epic-Strategy-Flags": "guardianKwsFlowEnabled=false;minorPreRegisterEnabled=false;registerEmailPreVerifyEnabled=false;guardianEmailVerifyEnabled=true;guardianEmbeddedDocusignEnabled=true",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-XSRF-TOKEN": xsrf_token,
+            "Referer": "https://www.epicgames.com/id/login/welcome"
+        }
+        response = await self.request('POST', "https://www.epicgames.com/id/api/exchange/generate", headers=headers)
         response = await response.json()
         return response['code']
 

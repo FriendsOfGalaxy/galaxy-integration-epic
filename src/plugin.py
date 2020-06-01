@@ -15,7 +15,7 @@ from galaxy.api.errors import (
 from backend import EpicClient
 from http_client import AuthenticatedHttpClient
 from version import __version__
-from local import LocalGamesProvider, local_client, ClientNotInstalled
+from local import LocalGamesProvider, local_client, ClientNotInstalled, get_size_at_path
 from consts import System, SYSTEM, AUTH_REDIRECT_URL, AUTH_PARAMS
 from definitions import GameInfo, EpicDlc
 
@@ -295,6 +295,14 @@ class EpicPlugin(Plugin):
                 time_played = int(item['totalTime']/60)
                 break
         return GameTime(game_id, time_played, None)
+
+    async def prepare_local_size_context(self, game_ids):
+        paths = self._local_provider.get_installed_paths()
+        return paths
+
+    async def get_local_size(self, game_id, context):
+        if game_id in context:
+            return get_size_at_path(context[game_id])
 
     async def launch_platform_client(self):
         if self._local_provider.is_client_running:

@@ -21,16 +21,17 @@ elif SYSTEM == System.MACOS:
 import time
 
 
-def get_size_at_path(start_path):
+async def get_size_at_path(start_path):
     total_size = 0
     for dirpath, dirnames, filenames in os.walk(start_path):
         for f in filenames:
+            await asyncio.sleep()
             fp = os.path.join(dirpath, f)
-            # skip if it is symbolic link
             if not os.path.islink(fp):
                 total_size += os.path.getsize(fp)
 
     return total_size
+
 
 class LauncherInstalledParser:
     def __init__(self):

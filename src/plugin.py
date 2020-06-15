@@ -300,9 +300,9 @@ class EpicPlugin(Plugin):
         paths = self._local_provider.get_installed_paths()
         return paths
 
-    async def get_local_size(self, game_id, context):
-        if game_id in context:
-            return get_size_at_path(context[game_id])
+    # async def get_local_size(self, game_id, context):
+    #     if game_id in context:
+    #        return await get_size_at_path(context[game_id])
 
     async def launch_platform_client(self):
         if self._local_provider.is_client_running:

@@ -7,7 +7,7 @@ import os.path
 
 from galaxy.api.types import LocalGameState
 
-from consts import LAUNCHER_INSTALLED_PATH, SYSTEM, System, LAUNCHER_PROCESS_IDENTIFIER
+from consts import LAUNCHER_INSTALLED_PATH, SYSTEM, System, LAUNCHER_PROCESS_IDENTIFIER, GAME_MANIFESTS_PATH
 from process_watcher import ProcessWatcher
 
 if SYSTEM == System.WINDOWS:
@@ -21,16 +21,14 @@ elif SYSTEM == System.MACOS:
 import time
 
 
-async def get_size_at_path(start_path):
-    total_size = 0
-    for dirpath, dirnames, filenames in os.walk(start_path):
-        for f in filenames:
-            await asyncio.sleep()
-            fp = os.path.join(dirpath, f)
-            if not os.path.islink(fp):
-                total_size += os.path.getsize(fp)
-
-    return total_size
+def parse_manifests() -> dict:
+    manifests = {}
+    for item in os.listdir(GAME_MANIFESTS_PATH):
+        item_path = os.path.join(GAME_MANIFESTS_PATH, item)
+        with open(item_path, 'r') as f:
+            manifest = json.load(f)
+            manifests[manifest['AppName']] = manifest
+    return manifests
 
 
 class LauncherInstalledParser:

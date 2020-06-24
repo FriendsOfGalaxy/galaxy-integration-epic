@@ -9,13 +9,13 @@ from galaxy.api.consts import Platform, LicenseType
 from galaxy.api.types import Authentication, Game, LicenseInfo, FriendInfo, LocalGame, NextStep, LocalGameState, GameTime, Dlc
 from galaxy.api.errors import (
     InvalidCredentials, BackendTimeout, BackendNotAvailable,
-    BackendError, NetworkError, UnknownError
+    BackendError, NetworkError, UnknownError, FailedParsingManifest
 )
 
 from backend import EpicClient
 from http_client import AuthenticatedHttpClient
 from version import __version__
-from local import LocalGamesProvider, local_client, ClientNotInstalled, get_size_at_path
+from local import LocalGamesProvider, local_client, ClientNotInstalled, parse_manifests
 from consts import System, SYSTEM, AUTH_REDIRECT_URL, AUTH_PARAMS
 from definitions import GameInfo, EpicDlc
 
@@ -296,13 +296,15 @@ class EpicPlugin(Plugin):
                 break
         return GameTime(game_id, time_played, None)
 
-    async def prepare_local_size_context(self, game_ids):
-        paths = self._local_provider.get_installed_paths()
-        return paths
+    async def prepare_local_size_context(self, game_ids) -> dict:
+        return parse_manifests()
 
-    # async def get_local_size(self, game_id, context):
-    #     if game_id in context:
-    #        return await get_size_at_path(context[game_id])
+    async def get_local_size(self, game_id, context) -> int:
+        try:
+            game_manifest = context[game_id]
+            return int(game_manifest['InstallSize'])
+        except (KeyError, ValueError) as e:
+            raise FailedParsingManifest(repr(e))
 
     async def launch_platform_client(self):
         if self._local_provider.is_client_running:

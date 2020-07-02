@@ -28,7 +28,7 @@ elif sys.platform == 'darwin':
     LAUNCHER_PROCESS_IDENTIFIER = 'Epic Games Launcher'
 
 LAUNCHER_INSTALLED_PATH = os.path.join(_program_data, 'Epic', 'UnrealEngineLauncher', 'LauncherInstalled.dat')
-GAME_MANIFESTS_PATH = os.path.join(_program_data, 'Epic', 'EpicGamesLauncher', 'Data' 'Manifests')
+GAME_MANIFESTS_PATH = os.path.join(_program_data, 'Epic', 'EpicGamesLauncher', 'Data', 'Manifests')
 
 AUTH_URL = r"https://www.epicgames.com/id/login"
 AUTH_REDIRECT_URL = r"https://epicgames.com/account/personal"

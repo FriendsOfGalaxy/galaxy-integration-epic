@@ -25,9 +25,10 @@ def parse_manifests() -> dict:
     manifests = {}
     for item in os.listdir(GAME_MANIFESTS_PATH):
         item_path = os.path.join(GAME_MANIFESTS_PATH, item)
-        with open(item_path, 'r') as f:
-            manifest = json.load(f)
-            manifests[manifest['AppName']] = manifest
+        if item_path.endswith('.item'):
+            with open(item_path, 'r') as f:
+                manifest = json.load(f)
+                manifests[manifest['AppName']] = manifest
     return manifests
 
 
